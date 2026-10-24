@@ -1,4 +1,3 @@
-
 const { Client, GatewayIntentBits } = require('discord.js');
 const { 
   allSlashCommands, 
@@ -14,6 +13,18 @@ const {
   handleEconomyInteraction 
 } = require('./economy.js');
 
+const http = require('http');
+
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Bot está online!');
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Servidor HTTP rodando na porta ${PORT}`);
+});
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -28,7 +39,7 @@ client.once('ready', async () => {
   try {
     const totalCommands = [...allSlashCommands, ...economySlashCommands];
     await client.application.commands.set(totalCommands);
-    console.log('Todos os comandos Slash (Moderação, Tickets e Economia) foram registrados com sucesso!');
+    console.log('Todos os comandos Slash foram registrados com sucesso!');
   } catch (error) {
     console.error('Erro ao registrar comandos:', error);
   }
@@ -50,4 +61,3 @@ client.on('guildMemberAdd', handleGuildMemberAdd);
 client.on('guildMemberRemove', handleGuildMemberRemove);
 
 client.login(process.env.DISCORD_TOKEN);
-
