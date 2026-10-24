@@ -1,4 +1,4 @@
-cat << 'EOF' > ticket.js
+
 const { ChannelType, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, SlashCommandBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder } = require('discord.js');
 const fs = require('fs');
 
@@ -790,4 +790,3 @@ async function handleGuildMemberUpdate(oldMember, newMember) {
 }
 
 module.exports = { allSlashCommands, handleInteraction, handleMessage, handleMessageDelete, handleGuildMemberAdd, handleGuildMemberRemove, handleGuildMemberUpdate, sendTicketPanel };
-EOF
