@@ -1,4 +1,4 @@
-cat << 'EOF' > economy.js
+
 const { EmbedBuilder, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const fs = require('fs');
 
@@ -411,4 +411,3 @@ async function handleEconomyInteraction(interaction) {
 }
 
 module.exports = { economySlashCommands, handleEconomyInteraction };
-EOF
