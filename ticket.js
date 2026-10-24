@@ -71,7 +71,7 @@ const globalCooldowns = new Map();
 const closingTickets = new Set();
 const ticketRatings = new Map();
 const permNicks = new Map();
-const caladosMap = new Set(); // Guarda os IDs dos usuários que estão "calados" (mensagens apagadas)
+const caladosMap = new Set();
 
 function checkGlobalCooldown(userId) {
   const agora = Date.now();
@@ -118,8 +118,15 @@ const allSlashCommands = [
   new SlashCommandBuilder().setName('avatar').setDescription('Mostra o avatar').addUserOption(o => o.setName('usuario').setDescription('Alvo').setRequired(false)),
   new SlashCommandBuilder().setName('serverinfo').setDescription('Informações do servidor'),
   new SlashCommandBuilder().setName('userinfo').setDescription('Informações de um usuário').addUserOption(o => o.setName('usuario').setDescription('Alvo').setRequired(false)),
-  new SlashCommandBuilder().setName('ban').setDescription('Bane um membro').addUserOption(o => o.setName('usuario').setDescription('Usuário').setRequired(true)).addStringOption(o => o.setName('motivo').setDescription('Motivo').setRequired(false)),
-  new SlashCommandBuilder().setName('kick').setDescription('Expulsa um membro').addUserOption(o => o.setName('usuario').setDescription('Usuário').setRequired(true)).addStringOption(o => o.setName('motivo').setDescription('Motivo').setRequired(false)),
+  
+  new SlashCommandBuilder().setName('ban').setDescription('Bane um membro do servidor')
+    .addUserOption(o => o.setName('usuario').setDescription('Usuário').setRequired(true))
+    .addIntegerOption(o => o.setName('minutos').setDescription('Tempo do ban em minutos (0 para permanente)').setRequired(false))
+    .addStringOption(o => o.setName('motivo').setDescription('Motivo').setRequired(false)),
+
+  new SlashCommandBuilder().setName('kick').setDescription('Expulsa um membro')
+    .addUserOption(o => o.setName('usuario').setDescription('Usuário').setRequired(true))
+    .addStringOption(o => o.setName('motivo').setDescription('Motivo').setRequired(false)),
   
   new SlashCommandBuilder().setName('mute').setDescription('Silencia um membro por tempo determinado')
     .addUserOption(o => o.setName('usuario').setDescription('Usuário').setRequired(true))
@@ -154,10 +161,7 @@ const allSlashCommands = [
   new SlashCommandBuilder().setName('setadminuser').setDescription('Adiciona um usuário com permissões administrativas do bot').addUserOption(o => o.setName('usuario').setDescription('Usuário permitido').setRequired(true)),
   new SlashCommandBuilder().setName('nick').setDescription('Altera o apelido de um membro').addUserOption(o => o.setName('usuario').setDescription('Membro').setRequired(true)).addStringOption(o => o.setName('apelido').setDescription('Novo apelido').setRequired(true)),
   new SlashCommandBuilder().setName('permnick').setDescription('Trava o apelido de um membro permanentemente').addUserOption(o => o.setName('usuario').setDescription('Membro').setRequired(true)).addStringOption(o => o.setName('apelido').setDescription('Apelido fixo').setRequired(true)),
-  
-  // Comando calado (ativa/desativa remoção automática de mensagens)
   new SlashCommandBuilder().setName('calado').setDescription('Deixa um membro calado (apaga todas as mensagens dele)').addUserOption(o => o.setName('usuario').setDescription('Membro').setRequired(true)),
-
   new SlashCommandBuilder().setName('censura').setDescription('Gerencia palavras censuradas')
     .addStringOption(o => o.setName('acao').setDescription('Ação').setRequired(true).addChoices(
       { name: 'Adicionar', value: 'add' },
@@ -172,7 +176,7 @@ function getHelpEmbed(page) {
   switch (page) {
     case 1:
       embed.setTitle('📖 Central de Ajuda — Moderação & Administração (1/4)')
-           .addFields({ name: '🛡️ Comandos de Staff', value: '• `/clear`: Limpa mensagens.\n• `/lock` / `/unlock`: Tranca canal.\n• `/setcargo`: Gerencia cargos.\n• `/ban` / `/kick` / `/mute [minutos]`: Punições.\n• `/calado`: Apaga todas as msgs do usuário.' });
+           .addFields({ name: '🛡️ Comandos de Staff & Punições', value: '• `/clear`: Limpa mensagens.\n• `/ban [usuario] [minutos]`: Bane com tempo opcional.\n• `/mute [usuario] [minutos]`: Silencia com tempo.\n• `/kick`: Expulsa o membro.\n• `/calado`: Apaga msgs automaticamente.' });
       break;
     case 2:
       embed.setTitle('📖 Central de Ajuda — Configurações & Logs (2/4)')
@@ -229,7 +233,6 @@ const ticketTypesMap = new Map();
 async function handleMessage(message) {
   if (message.author.bot || !message.guild) return;
 
-  // VERIFICA SE O USUÁRIO ESTÁ NA LISTA DE "CALADOS" (APAGA TODAS AS MENSAGENS DELE)
   if (caladosMap.has(message.author.id)) {
     try {
       await message.delete();
@@ -537,9 +540,23 @@ async function handleInteraction(interaction) {
       return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
     }
     const alvo = options.getUser('usuario');
+    const minutos = options.getInteger('minutos') || 0;
     const motivo = options.getString('motivo') || 'Sem motivo';
-    await guild.members.ban(alvo, { reason: motivo });
-    await interaction.reply({ content: `✅ Banido: **${alvo.tag}**` });
+    
+    try {
+      await guild.members.ban(alvo, { reason: motivo });
+      await interaction.reply({ content: `✅ <@${alvo.id}> foi banido${minutos > 0 ? ` por **${minutos} minuto(s)**` : ' **permanentemente**'}. Motivo: *${motivo}*` });
+      
+      if (minutos > 0) {
+        setTimeout(async () => {
+          try {
+            await guild.members.unban(alvo.id, 'Fim do ban temporário');
+          } catch (e) {}
+        }, minutos * 60 * 1000);
+      }
+    } catch (e) {
+      await interaction.reply({ content: '❌ Erro ao banir o usuário.', ephemeral: true });
+    }
   }
   else if (commandName === 'kick') {
     if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.KickMembers)) {
@@ -547,8 +564,13 @@ async function handleInteraction(interaction) {
     }
     const alvo = options.getMember('usuario');
     const motivo = options.getString('motivo') || 'Sem motivo';
-    await alvo.kick(motivo);
-    await interaction.reply({ content: `✅ Expulso: **${alvo.user.tag}**` });
+    
+    try {
+      await alvo.kick(motivo);
+      await interaction.reply({ content: `✅ <@${alvo.user.id}> foi expulso. Motivo: *${motivo}*` });
+    } catch (e) {
+      await interaction.reply({ content: '❌ Erro ao expulsar o membro.', ephemeral: true });
+    }
   }
   else if (commandName === 'mute') {
     if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
@@ -567,11 +589,9 @@ async function handleInteraction(interaction) {
     if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
     const alvo = options.getMember('usuario');
     await alvo.timeout(null, 'Unmute');
-    // Se estivesse calado, remove também da lista de calados
     caladosMap.delete(alvo.id);
     await interaction.reply({ content: `✅ Silêncio e restrições removidos de ${alvo.user.tag}.` });
   }
-  // COMANDO CALADO: Alterna o estado de apagar mensagens automaticamente do usuário
   else if (commandName === 'calado') {
     if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
     const alvo = options.getUser('usuario');
@@ -732,7 +752,7 @@ async function handleInteraction(interaction) {
     else if (commandName === 'setlogs') config[guild.id].logsChannel = chan.id;
     else if (commandName === 'setpunicoes') config[guild.id].punicoesChannel = chan.id;
     else if (commandName === 'setsuggestion') config[guild.id].suggestionChannel = chan.id;
-    else if/commandName === 'setwelcome' config[guild.id].welcomeChannel = chan.id;
+    else if (commandName === 'setwelcome') config[guild.id].welcomeChannel = chan.id;
     else if (commandName === 'setmsgdelete') config[guild.id].msgDeleteChannel = chan.id;
     
     saveConfig(config);

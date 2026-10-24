@@ -24,11 +24,11 @@ const client = new Client({
 });
 
 client.once('ready', async () => {
-  console.log('Bot online!');
+  console.log('Bot online com sucesso!');
   try {
     const totalCommands = [...allSlashCommands, ...economySlashCommands];
     await client.application.commands.set(totalCommands);
-    console.log('Todos os comandos Slash foram registrados com sucesso!');
+    console.log('Todos os comandos Slash (Moderação, Tickets e Economia) foram registrados com sucesso!');
   } catch (error) {
     console.error('Erro ao registrar comandos:', error);
   }
@@ -38,12 +38,16 @@ client.on('messageCreate', handleMessage);
 client.on('messageDelete', handleMessageDelete);
 
 client.on('interactionCreate', async (interaction) => {
-  await handleInteraction(interaction);
-  await handleEconomyInteraction(interaction);
+  try {
+    await handleInteraction(interaction);
+    await handleEconomyInteraction(interaction);
+  } catch (err) {
+    console.error('Erro na interação:', err);
+  }
 });
 
 client.on('guildMemberAdd', handleGuildMemberAdd);
 client.on('guildMemberRemove', handleGuildMemberRemove);
 
-client.login('DISCORD_TOKEN');
-EOF
+client.login(process.env.DISCORD_TOKEN);
+
