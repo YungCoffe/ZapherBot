@@ -1,4 +1,3 @@
-cat << 'EOF' > package.json
 {
   "name": "zapher-bot",
   "version": "1.0.0",
@@ -11,4 +10,3 @@ cat << 'EOF' > package.json
     "discord.js": "^14.14.0"
   }
 }
-EOF
