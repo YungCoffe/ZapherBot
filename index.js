@@ -1,4 +1,4 @@
-cat << 'EOF' > index.js
+
 const { Client, GatewayIntentBits } = require('discord.js');
 const { 
   allSlashCommands, 
