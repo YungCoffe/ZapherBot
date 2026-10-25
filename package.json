@@ -1,10 +1,14 @@
 {
   "name": "zapher-bot",
-  "version": "1.0.0",
-  "description": "Bot de Moderação e Tickets para Discord",
+  "version": "2.0.0",
+  "description": "Bot de Moderação, Tickets e Economia para Discord",
   "main": "index.js",
+  "private": true,
   "scripts": {
     "start": "node index.js"
+  },
+  "engines": {
+    "node": "20.x"
   },
   "dependencies": {
     "discord.js": "^14.14.0"

@@ -1,81 +1,148 @@
-const { Client, GatewayIntentBits } = require('discord.js');
-const http = require('http');
+'use strict';
 
-// Importações dos módulos do Bot
-const { 
-  allSlashCommands, 
-  handleInteraction, 
-  handleMessage, 
-  handleMessageDelete, 
-  handleGuildMemberAdd, 
-  handleGuildMemberRemove 
+const http = require('http');
+const { Client, GatewayIntentBits, Partials, Events, ActivityType } = require('discord.js');
+const {
+  allSlashCommands,
+  handledCommands: ticketHandled,
+  handleInteraction,
+  handleMessage,
+  handleMessageDelete,
+  handleMessageDeleteBulk,
+  handleGuildMemberAdd,
+  handleGuildMemberRemove,
+  handleGuildMemberUpdate,
+  startScheduler
 } = require('./ticket.js');
 
-const { 
-  economySlashCommands, 
-  handleEconomyMessage, 
-  handleEconomyInteraction 
+const {
+  economySlashCommands,
+  handledCommands: economyHandled,
+  handleEconomyInteraction,
+  startEconomyScheduler
 } = require('./economy.js');
+const { flushAll } = require('./storage.js');
 
-// 1. Servidor HTTP para satisfazer o Web Service do Render
-const server = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Bot e Servidor HTTP estão online!');
-});
+const TOKEN = process.env.DISCORD_TOKEN;
+const PORT = process.env.PORT || 10000;
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Servidor HTTP do Render rodando na porta ${PORT}`);
-});
+if (!TOKEN) {
+  console.error('❌ Variável de ambiente DISCORD_TOKEN não definida. Configure-a no Render (Environment).');
+  process.exit(1);
+}
 
-// 2. Instância do Client do Discord
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers
-  ]
+  ],
+  // Necessário para receber eventos de mensagens/membros que não estão em cache
+  partials: [Partials.Message, Partials.Channel, Partials.GuildMember]
 });
 
-// 3. Registo de Comandos Slash ao Iniciar
-client.once('ready', async () => {
-  console.log(`🤖 Bot ${client.user.tag} iniciado com sucesso!`);
+/* ------------------------------------------------------------
+ *  Servidor HTTP de uptime (o Render exige uma porta aberta)
+ *  Sobe ANTES do login para o deploy ser considerado saudável.
+ * ------------------------------------------------------------ */
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({
+    status: 'ok',
+    ready: client.isReady(),
+    uptime: Math.floor(process.uptime()),
+    ping: client.isReady() ? Math.round(client.ws.ping) : null
+  }));
+}).listen(PORT, '0.0.0.0', () => console.log(`🌐 Servidor de uptime ativo na porta ${PORT}`));
+
+/* ------------------------------------------------------------
+ *  Eventos
+ * ------------------------------------------------------------ */
+client.once(Events.ClientReady, async (c) => {
+  console.log(`✅ Bot online como ${c.user.tag}`);
+  c.user.setPresence({ activities: [{ name: '/help | ?help', type: ActivityType.Playing }], status: 'online' });
+
   try {
     const totalCommands = [...allSlashCommands, ...economySlashCommands];
-    await client.application.commands.set(totalCommands);
-    console.log('✅ Todos os comandos Slash (Moderação, Tickets e Economia) foram registrados!');
+
+    const nomes = totalCommands.map((cmd) => cmd.name);
+    const duplicados = nomes.filter((n, i) => nomes.indexOf(n) !== i);
+    if (duplicados.length) console.warn('⚠️ Comandos duplicados:', [...new Set(duplicados)].join(', '));
+    if (nomes.length > 100) console.warn(`⚠️ ${nomes.length} comandos registrados (o limite do Discord é 100).`);
+
+    const tratados = new Set([...ticketHandled, ...economyHandled]);
+    const semHandler = nomes.filter((n) => !tratados.has(n));
+    if (semHandler.length) console.warn('⚠️ Comandos registrados sem handler:', semHandler.join(', '));
+
+    await c.application.commands.set(totalCommands.map((cmd) => cmd.toJSON()));
+    console.log(`✅ ${nomes.length} comandos Slash (Moderação, Tickets e Economia) registrados com sucesso!`);
   } catch (error) {
-    console.error('❌ Erro ao registrar comandos Slash:', error);
+    console.error('❌ Erro ao registrar comandos:', error);
   }
+
+  startScheduler(c);
+  startEconomyScheduler(c);
 });
 
-// 4. Ouvinte de Mensagens para Comandos por Prefixo (?)
-client.on('messageCreate', async (message) => {
+client.on(Events.MessageCreate, handleMessage);
+client.on(Events.MessageDelete, handleMessageDelete);
+client.on(Events.MessageBulkDelete, handleMessageDeleteBulk);
+
+client.on(Events.InteractionCreate, async (interaction) => {
+  // Cada handler ignora o que não é dele e trata os próprios erros
+  await handleInteraction(interaction);
+  await handleEconomyInteraction(interaction);
+});
+
+client.on(Events.GuildMemberAdd, handleGuildMemberAdd);
+client.on(Events.GuildMemberRemove, handleGuildMemberRemove);
+client.on(Events.GuildMemberUpdate, handleGuildMemberUpdate);
+
+/* ------------------------------------------------------------
+ *  Diagnóstico de conexão (útil para o aviso de timeout do Gateway)
+ * ------------------------------------------------------------ */
+client.on(Events.Error, (err) => console.error('[client] erro:', err));
+client.on(Events.Warn, (msg) => console.warn('[client] aviso:', msg));
+client.on(Events.ShardError, (err, id) => console.error(`[shard ${id}] erro:`, err.message));
+client.on(Events.ShardDisconnect, (event, id) => console.warn(`[shard ${id}] desconectado (código ${event.code})`));
+client.on(Events.ShardReconnecting, (id) => console.log(`[shard ${id}] reconectando...`));
+client.on(Events.ShardResume, (id) => console.log(`[shard ${id}] conexão retomada`));
+
+process.on('unhandledRejection', (err) => console.error('[unhandledRejection]', err));
+process.on('uncaughtException', (err) => console.error('[uncaughtException]', err));
+
+/* ------------------------------------------------------------
+ *  Login com nova tentativa automática
+ * ------------------------------------------------------------ */
+async function login(tentativa = 1) {
   try {
-    await handleMessage(message);
-    await handleEconomyMessage(message);
+    await client.login(TOKEN);
   } catch (err) {
-    console.error('Erro ao processar mensagem por prefixo:', err);
+    console.error(`❌ Falha no login (tentativa ${tentativa}): ${err.message}`);
+    if (err.code === 'TokenInvalid') {
+      console.error('Token inválido. Gere um novo no Developer Portal e atualize DISCORD_TOKEN.');
+      return;
+    }
+    if (err.code === 'DisallowedIntents') {
+      console.error('Ative "Message Content Intent" e "Server Members Intent" no Developer Portal (aba Bot).');
+      return;
+    }
+    const espera = Math.min(60000, 5000 * tentativa);
+    console.log(`🔁 Nova tentativa em ${espera / 1000}s...`);
+    setTimeout(() => login(tentativa + 1), espera);
   }
-});
+}
+login();
 
-// 5. Ouvinte de Apagamento de Mensagens (Logs)
-client.on('messageDelete', handleMessageDelete);
-
-// 6. Ouvinte de Interações (Comandos por / e Botões/Modais)
-client.on('interactionCreate', async (interaction) => {
-  try {
-    await handleInteraction(interaction);
-    await handleEconomyInteraction(interaction);
-  } catch (err) {
-    console.error('Erro ao processar interação:', err);
-  }
-});
-
-// 7. Eventos de Entradas e Saídas de Membros
-client.on('guildMemberAdd', handleGuildMemberAdd);
-client.on('guildMemberRemove', handleGuildMemberRemove);
-
-// Login do Bot no Discord
-client.login(process.env.DISCORD_TOKEN);
+/* ------------------------------------------------------------
+ *  Desligamento limpo (o Render envia SIGTERM a cada deploy)
+ * ------------------------------------------------------------ */
+function shutdown(signal) {
+  console.log(`\n${signal} recebido, salvando dados e encerrando...`);
+  flushAll();
+  client.destroy();
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
