@@ -32,7 +32,7 @@ const economySlashCommands = [
   new SlashCommandBuilder().setName('extrato').setDescription('Mostra o resumo da tua conta'),
   new SlashCommandBuilder().setName('investir').setDescription('Aplica dinheiro em investimentos de risco').addIntegerOption(o => o.setName('quantia').setDescription('Quantidade').setRequired(true)),
   new SlashCommandBuilder().setName('loteria').setDescription('Compra um bilhete de loteria').addIntegerOption(o => o.setName('quantia').setDescription('Valor da aposta').setRequired(true)),
-  new SlashCommandBuilder().setName('mercado').setDescription('Abre o painel da lojinha de itens e melhorias'),
+  new SlashCommandBuilder().setName('paineleconomia').setDescription('Abre o painel da lojinha de itens e melhorias'),
   new SlashCommandBuilder().setName('apostar').setDescription('Aposta uma quantia no coinflip').addIntegerOption(o => o.setName('quantia').setDescription('Quantidade').setRequired(true)).addStringOption(o => o.setName('escolha').setDescription('Cara ou Coroa').setRequired(true).addChoices({name: 'Cara', value: 'cara'}, {name: 'Coroa', value: 'coroa'})),
   new SlashCommandBuilder().setName('slots').setDescription('Joga na máquina caça-níqueis').addIntegerOption(o => o.setName('quantia').setDescription('Quantidade').setRequired(true))
 ];
@@ -216,7 +216,7 @@ async function handleEconomyMessage(message) {
       return message.reply(`😢 Não foi desta vez! Perdeste os **$${qtd}** do bilhete.`);
     }
 
-    if (command === 'mercado' || command === 'shop') {
+    if (command === 'paineleconomia' || command === 'mercado' || command === 'shop') {
       const embed = new EmbedBuilder()
         .setColor(0x3498DB)
         .setTitle('🛒 Mercado & Lojinha do Servidor')
@@ -411,7 +411,7 @@ async function handleEconomyInteraction(interaction) {
       saveEconomyData(data);
       return interaction.reply({ content: `😢 Perdeste na loteria.` });
     }
-    if (commandName === 'mercado') {
+    if (commandName === 'paineleconomia') {
       const embed = new EmbedBuilder()
         .setColor(0x3498DB)
         .setTitle('🛒 Mercado & Lojinha do Servidor')
