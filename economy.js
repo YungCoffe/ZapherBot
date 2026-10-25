@@ -32,7 +32,7 @@ const economySlashCommands = [
   new SlashCommandBuilder().setName('extrato').setDescription('Mostra o resumo da tua conta'),
   new SlashCommandBuilder().setName('investir').setDescription('Aplica dinheiro em investimentos de risco').addIntegerOption(o => o.setName('quantia').setDescription('Quantidade').setRequired(true)),
   new SlashCommandBuilder().setName('loteria').setDescription('Compra um bilhete de loteria').addIntegerOption(o => o.setName('quantia').setDescription('Valor da aposta').setRequired(true)),
-  new SlashCommandBuilder().setName('mercado').setDescription('Abre a lojinha de itens e melhorias'),
+  new SlashCommandBuilder().setName('mercado').setDescription('Abre o painel da lojinha de itens e melhorias'),
   new SlashCommandBuilder().setName('apostar').setDescription('Aposta uma quantia no coinflip').addIntegerOption(o => o.setName('quantia').setDescription('Quantidade').setRequired(true)).addStringOption(o => o.setName('escolha').setDescription('Cara ou Coroa').setRequired(true).addChoices({name: 'Cara', value: 'cara'}, {name: 'Coroa', value: 'coroa'})),
   new SlashCommandBuilder().setName('slots').setDescription('Joga na máquina caça-níqueis').addIntegerOption(o => o.setName('quantia').setDescription('Quantidade').setRequired(true))
 ];
@@ -219,8 +219,13 @@ async function handleEconomyMessage(message) {
     if (command === 'mercado' || command === 'shop') {
       const embed = new EmbedBuilder()
         .setColor(0x3498DB)
-        .setTitle('🛒 Mercado do Servidor')
-        .setDescription('Usa os teus fundos para adquirir vantagens futuramente!\n• VIP Semanal: $5000\n• Picareta de Ouro: $2500');
+        .setTitle('🛒 Mercado & Lojinha do Servidor')
+        .setDescription('Escolha um dos itens abaixo para comprar utilizando o seu saldo da carteira:')
+        .addFields(
+          { name: '🎟️ VIP Semanal', value: 'Preço: **$5000**', inline: true },
+          { name: '⛏️ Picareta de Ouro', value: 'Preço: **$2500**', inline: true }
+        )
+        .setFooter({ text: 'Sistema de Economia • Zapher' });
       return message.reply({ embeds: [embed] });
     }
 
@@ -407,7 +412,14 @@ async function handleEconomyInteraction(interaction) {
       return interaction.reply({ content: `😢 Perdeste na loteria.` });
     }
     if (commandName === 'mercado') {
-      const embed = new EmbedBuilder().setColor(0x3498DB).setTitle('🛒 Mercado').setDescription('VIP: $5000\nPicareta: $2500');
+      const embed = new EmbedBuilder()
+        .setColor(0x3498DB)
+        .setTitle('🛒 Mercado & Lojinha do Servidor')
+        .setDescription('Painel de itens disponíveis para compra no servidor:')
+        .addFields(
+          { name: '🎟️ VIP Semanal', value: 'Preço: **$5000**', inline: true },
+          { name: '⛏️ Picareta de Ouro', value: 'Preço: **$2500**', inline: true }
+        );
       return interaction.reply({ embeds: [embed], ephemeral: true });
     }
     if (commandName === 'apostar') {
