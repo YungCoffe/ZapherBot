@@ -175,19 +175,19 @@ function getHelpEmbed(page) {
   switch (page) {
     case 1:
       embed.setTitle('📖 Central de Ajuda — Moderação & Administração (1/4)')
-           .addFields({ name: '🛡️ Comandos de Staff & Punições', value: '• `/clear`: Limpa mensagens.\n• `/ban [usuario] [minutos]`: Bane com tempo opcional.\n• `/mute [usuario] [minutos]`: Silencia com tempo.\n• `/kick`: Expulsa o membro.\n• `/calado`: Apaga msgs automaticamente.' });
+           .addFields({ name: '🛡️ Comandos de Staff & Punições', value: '• `?clear` / `/clear`: Limpa mensagens.\n• `?ban` / `/ban`: Bane com tempo opcional.\n• `?mute` / `/mute`: Silencia com tempo.\n• `?kick` / `/kick`: Expulsa o membro.\n• `?calado` / `/calado`: Apaga msgs automaticamente.' });
       break;
     case 2:
       embed.setTitle('📖 Central de Ajuda — Configurações & Logs (2/4)')
-           .addFields({ name: '⚙️ Setups do Servidor', value: '• `/setwelcome`: Boas-vindas.\n• `/setlogs`: Logs geral.\n• `/setdenuncias`: Denúncias.\n• `/setduvidas`: Dúvidas.\n• `/setpunicoes`: Punições.\n• `/setmsgdelete`: Mensagens apagadas.' });
+           .addFields({ name: '⚙️ Setups do Servidor', value: '• `?setwelcome`: Boas-vindas.\n• `?setlogs`: Logs geral.\n• `?setdenuncias`: Denúncias.\n• `?setduvidas`: Dúvidas.\n• `?setpunicoes`: Punições.\n• `?setmsgdelete`: Mensagens apagadas.' });
       break;
     case 3:
       embed.setTitle('📖 Central de Ajuda — Economia & Ganhos (3/4)')
-           .addFields({ name: '💳 Sistema Financeiro & Trabalho', value: '• `/saldo` / `/patrimonio`: Consulta fundos.\n• `/depositar` / `/sacar` / `/transferir`: Banco e Pix.\n• `/perfil` / `/rank` / `/extrato`: Dados e Top 10.\n• `/daily` / `/trabalhar` / `/minerar`: Obter lucros.\n• `/investir` / `/loteria`: Aplicações e sorte.' });
+           .addFields({ name: '💳 Sistema Financeiro & Trabalho', value: '• `?saldo` / `/saldo`: Consulta fundos.\n• `?depositar` / `?sacar`: Banco e transações.\n• `?daily` / `?trabalhar`: Obter lucros.' });
       break;
     case 4:
       embed.setTitle('📖 Central de Ajuda — Lojas, Jogos & Utilitários (4/4)')
-           .addFields({ name: '🛒 Lojas & Outros', value: '• `/mercado` (Painel interativo de compras).\n• `/apostar` / `/slots`: Jogos de risco.\n• `/ticket` / `/sugerir`: Suporte e ideias.\n• `/ping` / `/say` / `/embed`: Utilitários.' });
+           .addFields({ name: '🛒 Lojas & Outros', value: '• `?ticket` / `/ticket`: Suporte e atendimento.\n• `?ping` / `/ping`: Latência.' });
       break;
   }
   return embed;
@@ -272,50 +272,95 @@ async function handleMessage(message) {
   const config = getConfig();
   const guildConfig = config[guild.id] || {};
 
-  if (command === 'ping') {
-    return message.reply(`🏓 Pong! ${Date.now() - message.createdTimestamp}ms`);
-  }
-  if (command === 'help') {
-    return message.reply({ embeds: [getHelpEmbed(1)], components: [getHelpButtons(1)] });
-  }
-  if (command === 'say') {
-    const texto = args.join(' ');
-    if (!texto) return message.reply('❌ Escreve o texto que queres que o bot diga.');
-    await message.delete().catch(() => {});
-    return channel.send(texto);
-  }
-  if (command === 'clear') {
-    if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-      return message.reply('❌ Sem permissão.');
+  try {
+    if (command === 'ping') {
+      return message.reply(`🏓 Pong! ${Date.now() - message.createdTimestamp}ms`);
     }
-    const qtd = parseInt(args[0]);
-    if (!qtd || qtd < 1 || qtd > 100) return message.reply('❌ Indica uma quantidade entre 1 e 100.');
-    try {
+    if (command === 'help') {
+      return message.reply({ embeds: [getHelpEmbed(1)], components: [getHelpButtons(1)] });
+    }
+    if (command === 'say') {
+      const texto = args.join(' ');
+      if (!texto) return message.reply('❌ Escreve o texto que queres que o bot diga.');
+      await message.delete().catch(() => {});
+      return channel.send(texto);
+    }
+    if (command === 'clear') {
+      if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.ManageMessages)) {
+        return message.reply('❌ Sem permissão.');
+      }
+      const qtd = parseInt(args[0]);
+      if (!qtd || qtd < 1 || qtd > 100) return message.reply('❌ Indica uma quantidade entre 1 e 100.');
       await channel.bulkDelete(qtd, true);
       const msg = await channel.send(`✅ ${qtd} mensagens limpas!`);
       setTimeout(() => msg.delete().catch(() => {}), 3000);
-    } catch (e) {
-      return message.reply('❌ Erro ao limpar mensagens.');
+      return;
     }
-  }
-  if (command === 'lock') {
-    if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-      return message.reply('❌ Sem permissão.');
+    if (command === 'lock') {
+      if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        return message.reply('❌ Sem permissão.');
+      }
+      await channel.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: false });
+      return message.reply('🔒 Canal trancado com sucesso!');
     }
-    await channel.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: false });
-    return message.reply('🔒 Canal trancado com sucesso!');
-  }
-  if (command === 'unlock') {
-    if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-      return message.reply('❌ Sem permissão.');
+    if (command === 'unlock') {
+      if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        return message.reply('❌ Sem permissão.');
+      }
+      await channel.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: null });
+      return message.reply('🔓 Canal destrancado com sucesso!');
     }
-    await channel.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: null });
-    return message.reply('🔓 Canal destrancado com sucesso!');
-  }
-  if (command === 'ticket') {
-    if (!hasAdminPermission(member, guildConfig)) return message.reply('❌ Sem permissão.');
-    await sendTicketPanel(channel);
-    return message.reply({ content: '✅ Painel de tickets enviado!', ephemeral: true });
+    if (command === 'ticket') {
+      if (!hasAdminPermission(member, guildConfig)) return message.reply('❌ Sem permissão.');
+      await sendTicketPanel(channel);
+      return message.reply({ content: '✅ Painel de tickets enviado!', ephemeral: true });
+    }
+    if (command === 'ban') {
+      if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.BanMembers)) {
+        return message.reply('❌ Sem permissão.');
+      }
+      const alvo = message.mentions.members.first() || guild.members.cache.get(args[0]);
+      if (!alvo) return message.reply('❌ Menciona ou indica o ID de um membro válido.');
+      const minutos = parseInt(args[1]) || 0;
+      const motivo = args.slice(2).join(' ') || 'Sem motivo';
+      await guild.members.ban(alvo.id, { reason: motivo });
+      if (minutos > 0) {
+        setTimeout(async () => {
+          try { await guild.members.unban(alvo.id, 'Fim do ban temporário'); } catch (e) {}
+        }, minutos * 60 * 1000);
+      }
+      return message.reply(`✅ <@${alvo.id}> foi banido${minutos > 0 ? ` por **${minutos} minuto(s)**` : ' **permanentemente**'}. Motivo: *${motivo}*`);
+    }
+    if (command === 'kick') {
+      if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.KickMembers)) {
+        return message.reply('❌ Sem permissão.');
+      }
+      const alvo = message.mentions.members.first() || guild.members.cache.get(args[0]);
+      if (!alvo) return message.reply('❌ Menciona um membro válido.');
+      const motivo = args.slice(1).join(' ') || 'Sem motivo';
+      await alvo.kick(motivo);
+      return message.reply(`✅ <@${alvo.user.id}> foi expulso. Motivo: *${motivo}*`);
+    }
+    if (command === 'mute') {
+      if (!hasAdminPermission(member, guildConfig)) return message.reply('❌ Sem permissão.');
+      const alvo = message.mentions.members.first() || guild.members.cache.get(args[0]);
+      if (!alvo) return message.reply('❌ Menciona um membro válido.');
+      const minutos = parseInt(args[1]);
+      if (!minutos) return message.reply('❌ Indica o tempo do mute em minutos.');
+      const motivo = args.slice(2).join(' ') || 'Sem motivo';
+      await alvo.timeout(minutos * 60 * 1000, motivo);
+      return message.reply(`✅ <@${alvo.id}> foi silenciado por **${minutos} minuto(s)**.`);
+    }
+    if (command === 'unmute') {
+      if (!hasAdminPermission(member, guildConfig)) return message.reply('❌ Sem permissão.');
+      const alvo = message.mentions.members.first() || guild.members.cache.get(args[0]);
+      if (!alvo) return message.reply('❌ Menciona um membro válido.');
+      await alvo.timeout(null, 'Unmute');
+      caladosMap.delete(alvo.id);
+      return message.reply(`✅ Silêncio removido de ${alvo.user.tag}.`);
+    }
+  } catch (err) {
+    return message.reply('❌ Não foi possível executar este comando via prefixo. Tente usar o comando em barra (`/`).');
   }
 }
 
@@ -484,66 +529,61 @@ async function handleInteraction(interaction) {
   const config = getConfig();
   const guildConfig = config[guild.id] || {};
 
-  if (commandName === 'ping') {
-    return interaction.reply({ content: `🏓 Pong! ${Date.now() - interaction.createdTimestamp}ms`, ephemeral: true });
-  } 
-  if (commandName === 'help') {
-    return interaction.reply({ embeds: [getHelpEmbed(1)], components: [getHelpButtons(1)], ephemeral: true });
-  }
-  if (commandName === 'lock') {
-    if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-      return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+  try {
+    if (commandName === 'ping') {
+      return interaction.reply({ content: `🏓 Pong! ${Date.now() - interaction.createdTimestamp}ms`, ephemeral: true });
+    } 
+    if (commandName === 'help') {
+      return interaction.reply({ embeds: [getHelpEmbed(1)], components: [getHelpButtons(1)], ephemeral: true });
     }
-    await channel.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: false });
-    return interaction.reply({ content: '🔒 Canal trancado!' });
-  }
-  if (commandName === 'unlock') {
-    if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-      return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+    if (commandName === 'lock') {
+      if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+      }
+      await channel.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: false });
+      return interaction.reply({ content: '🔒 Canal trancado!' });
     }
-    await channel.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: null });
-    return interaction.reply({ content: '🔓 Canal destrancado!' });
-  }
-  if (commandName === 'say') {
-    await channel.send(options.getString('texto'));
-    return interaction.reply({ content: '✅ Enviado!', ephemeral: true });
-  }
-  if (commandName === 'clear') {
-    if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-      return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+    if (commandName === 'unlock') {
+      if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+      }
+      await channel.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: null });
+      return interaction.reply({ content: '🔓 Canal destrancado!' });
     }
-    const qtd = options.getInteger('qtd');
-    await interaction.deferReply({ ephemeral: true });
-    try {
+    if (commandName === 'say') {
+      await channel.send(options.getString('texto'));
+      return interaction.reply({ content: '✅ Enviado!', ephemeral: true });
+    }
+    if (commandName === 'clear') {
+      if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.ManageMessages)) {
+        return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+      }
+      const qtd = options.getInteger('qtd');
+      await interaction.deferReply({ ephemeral: true });
       await channel.bulkDelete(qtd, true);
       return interaction.editReply({ content: `✅ ${qtd} mensagens limpas!` });
-    } catch (e) {
-      return interaction.editReply({ content: '❌ Erro ao limpar mensagens.' });
     }
-  }
-  if (commandName === 'avatar') {
-    const alvo = options.getUser('usuario') || interaction.user;
-    const embed = new EmbedBuilder().setColor(0x00AE86).setTitle(`Avatar de ${alvo.tag}`).setImage(alvo.displayAvatarURL({ size: 1024, dynamic: true }));
-    return interaction.reply({ embeds: [embed] });
-  }
-  if (commandName === 'serverinfo') {
-    const embed = new EmbedBuilder().setColor(0x00AE86).setTitle(guild.name).addFields({ name: 'Membros', value: `${guild.memberCount}`, inline: true });
-    return interaction.reply({ embeds: [embed] });
-  }
-  if (commandName === 'userinfo') {
-    const alvo = options.getMember('usuario') || member;
-    const embed = new EmbedBuilder().setColor(0x00AE86).setTitle(alvo.user.tag).addFields({ name: 'ID', value: alvo.id, inline: true });
-    return interaction.reply({ embeds: [embed] });
-  }
-  if (commandName === 'ban') {
-    if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.BanMembers)) {
-      return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+    if (commandName === 'avatar') {
+      const alvo = options.getUser('usuario') || interaction.user;
+      const embed = new EmbedBuilder().setColor(0x00AE86).setTitle(`Avatar de ${alvo.tag}`).setImage(alvo.displayAvatarURL({ size: 1024, dynamic: true }));
+      return interaction.reply({ embeds: [embed] });
     }
-    const alvo = options.getUser('usuario');
-    const minutos = options.getInteger('minutos') || 0;
-    const motivo = options.getString('motivo') || 'Sem motivo';
-    
-    try {
+    if (commandName === 'serverinfo') {
+      const embed = new EmbedBuilder().setColor(0x00AE86).setTitle(guild.name).addFields({ name: 'Membros', value: `${guild.memberCount}`, inline: true });
+      return interaction.reply({ embeds: [embed] });
+    }
+    if (commandName === 'userinfo') {
+      const alvo = options.getMember('usuario') || member;
+      const embed = new EmbedBuilder().setColor(0x00AE86).setTitle(alvo.user.tag).addFields({ name: 'ID', value: alvo.id, inline: true });
+      return interaction.reply({ embeds: [embed] });
+    }
+    if (commandName === 'ban') {
+      if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.BanMembers)) {
+        return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+      }
+      const alvo = options.getUser('usuario');
+      const minutos = options.getInteger('minutos') || 0;
+      const motivo = options.getString('motivo') || 'Sem motivo';
       await guild.members.ban(alvo, { reason: motivo });
       if (minutos > 0) {
         setTimeout(async () => {
@@ -551,209 +591,53 @@ async function handleInteraction(interaction) {
         }, minutos * 60 * 1000);
       }
       return interaction.reply({ content: `✅ <@${alvo.id}> foi banido${minutos > 0 ? ` por **${minutos} minuto(s)**` : ' **permanentemente**'}. Motivo: *${motivo}*` });
-    } catch (e) {
-      return interaction.reply({ content: '❌ Erro ao banir o usuário.', ephemeral: true });
     }
-  }
-  if (commandName === 'kick') {
-    if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.KickMembers)) {
-      return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
-    }
-    const alvo = options.getMember('usuario');
-    const motivo = options.getString('motivo') || 'Sem motivo';
-    
-    try {
+    if (commandName === 'kick') {
+      if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.KickMembers)) {
+        return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+      }
+      const alvo = options.getMember('usuario');
+      const motivo = options.getString('motivo') || 'Sem motivo';
       await alvo.kick(motivo);
       return interaction.reply({ content: `✅ <@${alvo.user.id}> foi expulso. Motivo: *${motivo}*` });
-    } catch (e) {
-      return interaction.reply({ content: '❌ Erro ao expulsar o membro.', ephemeral: true });
     }
-  }
-  if (commandName === 'mute') {
-    if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
-    const alvo = options.getMember('usuario');
-    const minutos = options.getInteger('minutos');
-    const motivo = options.getString('motivo') || 'Sem motivo especificado';
-    
-    try {
+    if (commandName === 'mute') {
+      if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+      const alvo = options.getMember('usuario');
+      const minutos = options.getInteger('minutos');
+      const motivo = options.getString('motivo') || 'Sem motivo especificado';
       await alvo.timeout(minutos * 60 * 1000, motivo);
       return interaction.reply({ content: `✅ <@${alvo.id}> foi silenciado por **${minutos} minuto(s)**. Motivo: *${motivo}*` });
-    } catch (e) {
-      return interaction.reply({ content: '❌ Erro ao silenciar o membro.', ephemeral: true });
     }
-  }
-  if (commandName === 'unmute') {
-    if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
-    const alvo = options.getMember('usuario');
-    await alvo.timeout(null, 'Unmute');
-    caladosMap.delete(alvo.id);
-    return interaction.reply({ content: `✅ Silêncio e restrições removidos de ${alvo.user.tag}.` });
-  }
-  if (commandName === 'calado') {
-    if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
-    const alvo = options.getUser('usuario');
-    
-    if (caladosMap.has(alvo.id)) {
+    if (commandName === 'unmute') {
+      if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+      const alvo = options.getMember('usuario');
+      await alvo.timeout(null, 'Unmute');
       caladosMap.delete(alvo.id);
-      return interaction.reply({ content: `🔊 <@${alvo.id}> não está mais calado (as mensagens voltaram a aparecer).` });
-    } else {
-      caladosMap.add(alvo.id);
-      return interaction.reply({ content: `🔇 <@${alvo.id}> foi deixado **calado**! A partir de agora, todas as mensagens dele serão apagadas automaticamente.` });
+      return interaction.reply({ content: `✅ Silêncio e restrições removidos de ${alvo.user.tag}.` });
     }
-  }
-  if (commandName === 'setcargo') {
-    if (!hasAdminPermission(member, guildConfig) && !member.permissions.has(PermissionFlagsBits.ManageRoles)) {
-      return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
-    }
-    const alvo = options.getMember('usuario');
-    const cargo = options.getRole('cargo');
-    try {
-      if (alvo.roles.cache.has(cargo.id)) {
-        await alvo.roles.remove(cargo);
-        return interaction.reply({ content: `✅ Cargo <@&${cargo.id}> removido de ${alvo.user.tag}.` });
+    if (commandName === 'calado') {
+      if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+      const alvo = options.getUser('usuario');
+      if (caladosMap.has(alvo.id)) {
+        caladosMap.delete(alvo.id);
+        return interaction.reply({ content: `🔊 <@${alvo.id}> não está mais calado.` });
       } else {
-        await alvo.roles.add(cargo);
-        return interaction.reply({ content: `✅ Cargo <@&${cargo.id}> adicionado a ${alvo.user.tag}.` });
+        caladosMap.add(alvo.id);
+        return interaction.reply({ content: `🔇 <@${alvo.id}> foi deixado **calado**!` });
       }
-    } catch (e) {
-      return interaction.reply({ content: '❌ Erro ao gerenciar cargo.', ephemeral: true });
     }
-  }
-  if (commandName === 'warn') {
-    if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
-    const alvo = options.getUser('usuario');
-    const motivo = options.getString('motivo');
-    const warnings = getWarnings();
-    if (!warnings[guild.id]) warnings[guild.id] = {};
-    if (!warnings[guild.id][alvo.id]) warnings[guild.id][alvo.id] = [];
-    warnings[guild.id][alvo.id].push({ motivo, data: new Date().toLocaleDateString() });
-    saveWarnings(warnings);
-    return interaction.reply({ content: `✅ Aviso registado para ${alvo.tag}.` });
-  }
-  if (commandName === 'warnings') {
-    const alvo = options.getUser('usuario');
-    const warnings = getWarnings();
-    const lista = warnings[guild.id]?.[alvo.id] || [];
-    if (lista.length === 0) return interaction.reply({ content: `ℹ️ ${alvo.tag} não tem avisos.`, ephemeral: true });
-    const desc = lista.map((w, i) => `${i+1}. ${w.motivo} (${w.data})`).join('\n');
-    return interaction.reply({ content: `⚠️ Avisos de ${alvo.tag}:\n${desc}`, ephemeral: true });
-  }
-  if (commandName === 'ticket') {
-    if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
-    await sendTicketPanel(channel);
-    return interaction.reply({ content: '✅ Painel de tickets enviado!', ephemeral: true });
-  }
-  if (commandName === 'painel-sugestao') {
-    if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
-    await sendSuggestionPanel(channel);
-    return interaction.reply({ content: '✅ Painel de sugestões enviado!', ephemeral: true });
-  }
-  if (commandName === 'sugerir') {
-    const ideia = options.getString('ideia');
-    const embed = new EmbedBuilder().setColor(0xFFA500).setTitle('💡 Sugestão').setDescription(ideia).setFooter({ text: interaction.user.tag });
-    await sendLog(guild, 'sugestao', embed);
-    return interaction.reply({ content: '✅ Sugestão enviada!', ephemeral: true });
-  }
-  if (commandName === 'denuncia') {
-    const texto = options.getString('mensagem');
-    const embed = new EmbedBuilder().setColor(0xFF0000).setTitle('🚨 Denúncia Anônima').setDescription(texto);
-    await sendLog(guild, 'denuncia', embed);
-    return interaction.reply({ content: '✅ Denúncia enviada à staff.', ephemeral: true });
-  }
-  if (commandName === 'sorteio') {
-    if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
-    const premio = options.getString('premio');
-    const msg = await channel.send({ embeds: [new EmbedBuilder().setTitle('🎉 SORTEIO').setDescription(`Prêmio: **${premio}**`)] });
-    await msg.react('🎉');
-    return interaction.reply({ content: '✅ Sorteio iniciado!', ephemeral: true });
-  }
-  if (commandName === 'embed') {
-    if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
-    await channel.send({ embeds: [new EmbedBuilder().setTitle(options.getString('titulo')).setDescription(options.getString('descricao')).setColor(0x3498DB)] });
-    return interaction.reply({ content: '✅ Embed criado!', ephemeral: true });
-  }
-  if (commandName === 'automod') {
-    if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
-    if (!config[guild.id]) config[guild.id] = {};
-    config[guild.id].automod = options.getBoolean('status');
-    saveConfig(config);
-    return interaction.reply({ content: '✅ Automod atualizado!', ephemeral: true });
-  }
-  if (commandName === 'setadminrole') {
-    if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ Apenas Administradores.', ephemeral: true });
-    const cargo = options.getRole('cargo');
-    if (!config[guild.id]) config[guild.id] = {};
-    if (!config[guild.id].adminRoles) config[guild.id].adminRoles = [];
-    config[guild.id].adminRoles.push(cargo.id);
-    saveConfig(config);
-    return interaction.reply({ content: `✅ Cargo <@&${cargo.id}> adicionado como admin do bot.`, ephemeral: true });
-  }
-  if (commandName === 'setadminuser') {
-    if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ Apenas Administradores.', ephemeral: true });
-    const usuario = options.getUser('usuario');
-    if (!config[guild.id]) config[guild.id] = {};
-    if (!config[guild.id].adminUsers) config[guild.id].adminUsers = [];
-    config[guild.id].adminUsers.push(usuario.id);
-    saveConfig(config);
-    return interaction.reply({ content: `✅ Utilizador <@${usuario.id}> adicionado como admin do bot.`, ephemeral: true });
-  }
-  if (commandName === 'nick') {
-    if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
-    const alvo = options.getMember('usuario');
-    const apelido = options.getString('apelido');
-    await alvo.setNickname(apelido);
-    return interaction.reply({ content: `✅ Apelido de ${alvo.user.tag} alterado.` });
-  }
-  if (commandName === 'permnick') {
-    if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
-    const alvo = options.getMember('usuario');
-    const apelido = options.getString('apelido');
-    await alvo.setNickname(apelido);
-    permNicks.set(alvo.id, apelido);
-    return interaction.reply({ content: `🔒 Apelido de ${alvo.user.tag} travado como **${apelido}**.` });
-  }
-  if (commandName === 'censura') {
-    if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
-    const acao = options.getString('acao');
-    const palavra = options.getString('palavra');
-    const censuraData = getCensura();
-    if (!censuraData[guild.id]) censuraData[guild.id] = [];
-
-    if (acao === 'list') {
-      const lista = censuraData[guild.id];
-      if (lista.length === 0) return interaction.reply({ content: '🛡️ Nenhuma palavra censurada.', ephemeral: true });
-      return interaction.reply({ content: `🛡️ **Censuradas:**\n${lista.join(', ')}`, ephemeral: true });
+    if (commandName === 'ticket') {
+      if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+      await sendTicketPanel(channel);
+      return interaction.reply({ content: '✅ Painel de tickets enviado!', ephemeral: true });
     }
-
-    if (!palavra) return interaction.reply({ content: '❌ Indica a palavra.', ephemeral: true });
-
-    if (acao === 'add') {
-      if (!censuraData[guild.id].includes(palavra)) censuraData[guild.id].push(palavra);
-      saveCensura(censuraData);
-      return interaction.reply({ content: `✅ Palavra \`${palavra}\` censurada.`, ephemeral: true });
+  } catch (err) {
+    if (interaction.deferred || interaction.replied) {
+      return interaction.editReply({ content: '❌ Não foi possível executar este comando por barra.' });
+    } else {
+      return interaction.reply({ content: '❌ Não foi possível executar este comando por barra.', ephemeral: true });
     }
-
-    if (acao === 'remove') {
-      censuraData[guild.id] = censuraData[guild.id].filter(p => p !== palavra);
-      saveCensura(censuraData);
-      return interaction.reply({ content: `✅ Palavra \`${palavra}\` removida da censura.`, ephemeral: true });
-    }
-  }
-  if (commandName.startsWith('set')) {
-    if (!hasAdminPermission(member, guildConfig)) return interaction.reply({ content: '❌ Apenas administradores.', ephemeral: true });
-    const chan = options.getChannel('canal');
-    if (!config[guild.id]) config[guild.id] = {};
-    
-    if (commandName === 'setdenuncias') config[guild.id].denunciasChannel = chan.id;
-    else if (commandName === 'setduvidas') config[guild.id].duvidasChannel = chan.id;
-    else if (commandName === 'setlogs') config[guild.id].logsChannel = chan.id;
-    else if (commandName === 'setpunicoes') config[guild.id].punicoesChannel = chan.id;
-    else if (commandName === 'setsuggestion') config[guild.id].suggestionChannel = chan.id;
-    else if (commandName === 'setwelcome') config[guild.id].welcomeChannel = chan.id;
-    else if (commandName === 'setmsgdelete') config[guild.id].msgDeleteChannel = chan.id;
-    
-    saveConfig(config);
-    return interaction.reply({ content: `✅ Canal <#${chan.id}> configurado com sucesso!`, ephemeral: true });
   }
 }
 
@@ -779,11 +663,4 @@ async function handleGuildMemberRemove(member) {
   }
 }
 
-async function handleGuildMemberUpdate(oldMember, newMember) {
-  const fixedNick = permNicks.get(newMember.id);
-  if (fixedNick && newMember.nickname !== fixedNick) {
-    try { await newMember.setNickname(fixedNick, 'PermNick Active'); } catch (e) {}
-  }
-}
-
-module.exports = { allSlashCommands, handleInteraction, handleMessage, handleMessageDelete, handleGuildMemberAdd, handleGuildMemberRemove, handleGuildMemberUpdate, sendTicketPanel };
+module.exports = { allSlashCommands, handleInteraction, handleMessage, handleMessageDelete, handleGuildMemberAdd, handleGuildMemberRemove, sendTicketPanel };
