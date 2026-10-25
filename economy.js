@@ -1,472 +1,477 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const fs = require('fs');
 
-const ECONOMY_FILE = './economy.json';
+const ECO_FILE = './economy_data.json';
 
-function getEconomyData() {
+function getEcoData() {
   try {
-    if (fs.existsSync(ECONOMY_FILE)) {
-      return JSON.parse(fs.readFileSync(ECONOMY_FILE, 'utf8'));
+    if (fs.existsSync(ECO_FILE)) {
+      return JSON.parse(fs.readFileSync(ECO_FILE, 'utf8'));
     }
   } catch (e) {}
   return {};
 }
 
-function saveEconomyData(data) {
+function saveEcoData(data) {
   try {
-    fs.writeFileSync(ECONOMY_FILE, JSON.stringify(data, null, 2), 'utf8');
+    fs.writeFileSync(ECO_FILE, JSON.stringify(data, null, 2), 'utf8');
   } catch (e) {}
 }
 
 const economySlashCommands = [
-  new SlashCommandBuilder().setName('saldo').setDescription('Consulta o teu saldo atual ou de outro usuário').addUserOption(o => o.setName('usuario').setDescription('Usuário').setRequired(false)),
-  new SlashCommandBuilder().setName('patrimonio').setDescription('Mostra o patrimônio total (carteira + banco)'),
-  new SlashCommandBuilder().setName('daily').setDescription('Resgata a tua recompensa diária'),
-  new SlashCommandBuilder().setName('trabalhar').setDescription('Trabalha para ganhar dinheiro'),
-  new SlashCommandBuilder().setName('minerar').setDescription('Vai minerar para tentar encontrar recursos e dinheiro'),
-  new SlashCommandBuilder().setName('depositar').setDescription('Deposita dinheiro no banco').addIntegerOption(o => o.setName('quantia').setDescription('Quantidade').setRequired(true)),
-  new SlashCommandBuilder().setName('sacar').setDescription('Saca dinheiro do banco').addIntegerOption(o => o.setName('quantia').setDescription('Quantidade').setRequired(true)),
-  new SlashCommandBuilder().setName('transferir').setDescription('Transfere dinheiro para outro usuário (Pix)').addUserOption(o => o.setName('usuario').setDescription('Destinatário').setRequired(true)).addIntegerOption(o => o.setName('quantia').setDescription('Quantidade').setRequired(true)),
-  new SlashCommandBuilder().setName('perfil').setDescription('Mostra o teu perfil financeiro'),
-  new SlashCommandBuilder().setName('rank').setDescription('Mostra os mais ricos do servidor'),
-  new SlashCommandBuilder().setName('extrato').setDescription('Mostra o resumo da tua conta'),
-  new SlashCommandBuilder().setName('investir').setDescription('Aplica dinheiro em investimentos de risco').addIntegerOption(o => o.setName('quantia').setDescription('Quantidade').setRequired(true)),
-  new SlashCommandBuilder().setName('loteria').setDescription('Compra um bilhete de loteria').addIntegerOption(o => o.setName('quantia').setDescription('Valor da aposta').setRequired(true)),
-  new SlashCommandBuilder().setName('paineleconomia').setDescription('Abre o painel da lojinha de itens e melhorias'),
-  new SlashCommandBuilder().setName('apostar').setDescription('Aposta uma quantia no coinflip').addIntegerOption(o => o.setName('quantia').setDescription('Quantidade').setRequired(true)).addStringOption(o => o.setName('escolha').setDescription('Cara ou Coroa').setRequired(true).addChoices({name: 'Cara', value: 'cara'}, {name: 'Coroa', value: 'coroa'})),
-  new SlashCommandBuilder().setName('slots').setDescription('Joga na máquina caça-níqueis').addIntegerOption(o => o.setName('quantia').setDescription('Quantidade').setRequired(true))
+  new SlashCommandBuilder().setName('saldo').setDescription('Consulta o teu património e extrato').addUserOption(o => o.setName('usuario').setDescription('Membro').setRequired(false)),
+  new SlashCommandBuilder().setName('patrimonio').setDescription('Consulta o teu património e saldo total'),
+  new SlashCommandBuilder().setName('depositar').setDescription('Guarda dinheiro no banco').addIntegerOption(o => o.setName('valor').setDescription('Quantia').setRequired(true)),
+  new SlashCommandBuilder().setName('sacar').setDescription('Saca dinheiro do banco').addIntegerOption(o => o.setName('valor').setDescription('Quantia').setRequired(true)),
+  new SlashCommandBuilder().setName('transferir').setDescription('Faz Pix/Transferência para outro membro').addUserOption(o => o.setName('usuario').setDescription('Destinatário').setRequired(true)).addIntegerOption(o => o.setName('valor').setDescription('Valor').setRequired(true)),
+  new SlashCommandBuilder().setName('perfil').setDescription('Mostra o teu cartão de cidadão e inventário'),
+  new SlashCommandBuilder().setName('rank').setDescription('Mostra o top 10 mais ricos do servidor'),
+  new SlashCommandBuilder().setName('extrato').setDescription('Mostra as últimas movimentações da tua conta'),
+  
+  new SlashCommandBuilder().setName('daily').setDescription('Resgata o teu prémio diário'),
+  new SlashCommandBuilder().setName('weekly').setDescription('Resgata o teu bónus semanal'),
+  new SlashCommandBuilder().setName('trabalhar').setDescription('Trabalha para ganhar dinheiro e subir de nível'),
+  new SlashCommandBuilder().setName('minerar').setDescription('Vai às minas procurar minérios valiosos'),
+  new SlashCommandBuilder().setName('pescar').setDescription('Vai pescar no rio'),
+  new SlashCommandBuilder().setName('cacar').setDescription('Vai caçar na floresta'),
+  new SlashCommandBuilder().setName('farmar').setDescription('Cultiva a terra para colher lucros'),
+  
+  new SlashCommandBuilder().setName('roubar').setDescription('Tenta roubar outro membro').addUserOption(o => o.setName('usuario').setDescription('Alvo').setRequired(true)),
+  new SlashCommandBuilder().setName('crime').setDescription('Comete um crime arriscado na cidade'),
+  new SlashCommandBuilder().setName('apostar').setDescription('Aposta dinheiro num jogo rápido de sorte').addIntegerOption(o => o.setName('valor').setDescription('Valor').setRequired(true)),
+  new SlashCommandBuilder().setName('coinflip').setDescription('Joga cara ou coroa apostando').addStringOption(o => o.setName('escolha').setDescription('cara ou coroa').setRequired(true).addChoices({name: 'Cara', value: 'cara'}, {name: 'Coroa', value: 'coroa'})).addIntegerOption(o => o.setName('valor').setDescription('Valor').setRequired(true)),
+  new SlashCommandBuilder().setName('slots').setDescription('Joga na máquina caça-níqueis').addIntegerOption(o => o.setName('valor').setDescription('Valor').setRequired(true)),
+  new SlashCommandBuilder().setName('roleta').setDescription('Aposta na roleta da sorte').addStringOption(o => o.setName('cor').setDescription('vermelho, preto ou verde').setRequired(true).addChoices({name: 'Vermelho', value: 'vermelho'}, {name: 'Preto', value: 'preto'}, {name: 'Verde', value: 'verde'})).addIntegerOption(o => o.setName('valor').setDescription('Valor').setRequired(true)),
+  
+  new SlashCommandBuilder().setName('loja').setDescription('Mostra a lojinha do servidor'),
+  new SlashCommandBuilder().setName('mercado').setDescription('Envia o painel interativo fixo da lojinha e mercado no canal'),
+  new SlashCommandBuilder().setName('painel-economia').setDescription('Envia o painel interativo fixo da lojinha e mercado no canal'),
+  new SlashCommandBuilder().setName('inventario').setDescription('Mostra os itens que tens guardados'),
+  
+  new SlashCommandBuilder().setName('investir').setDescription('Aplica dinheiro em fundos de investimento variados').addStringOption(o => o.setName('opcao').setDescription('Tipo de investimento').setRequired(true).addChoices(
+    { name: 'Criptomoedas (Alto Risco) - R$ 50.000', value: 'crypto' },
+    { name: 'Tesouro Direto (Baixo Risco) - R$ 20.000', value: 'tesouro' },
+    { name: 'Ações da Bolsa (Médio Risco) - R$ 35.000', value: 'acoes' }
+  )),
+  new SlashCommandBuilder().setName('emprestimo').setDescription('Pede um empréstimo ao banco').addIntegerOption(o => o.setName('valor').setDescription('Valor').setRequired(true)),
+  new SlashCommandBuilder().setName('loteria').setDescription('Compra um bilhete de loteria por R$ 5.000'),
+  
+  new SlashCommandBuilder().setName('addmoney').setDescription('[ADMIN] Adiciona dinheiro a um usuário').addUserOption(o => o.setName('usuario').setDescription('Alvo').setRequired(true)).addIntegerOption(o => o.setName('valor').setDescription('Valor').setRequired(true)),
+  new SlashCommandBuilder().setName('removemoney').setDescription('[ADMIN] Remove dinheiro de um usuário').addUserOption(o => o.setName('usuario').setDescription('Alvo').setRequired(true)).addIntegerOption(o => o.setName('valor').setDescription('Valor').setRequired(true))
 ];
 
-function processBalance(guildId, userId) {
-  const data = getEconomyData();
-  if (!data[guildId]) data[guildId] = {};
-  if (!data[guildId][userId]) {
-    data[guildId][userId] = { wallet: 100, bank: 500, lastDaily: 0, lastWork: 0, lastMine: 0, inventory: [] };
-    saveEconomyData(data);
+function getUserAccount(data, userId) {
+  if (!data[userId]) {
+    data[userId] = { 
+      wallet: 150000, 
+      bank: 500000, 
+      jobLevel: 1, 
+      lastDaily: 0, 
+      lastWeekly: 0, 
+      lastWork: 0, 
+      inventory: [],
+      extrato: [],
+      investimento: 0
+    };
   }
-  return data[guildId][userId];
+  return data[userId];
 }
 
-async function handleEconomyMessage(message) {
-  if (message.author.bot || !message.guild) return;
-  const content = message.content.trim();
-  if (!content.startsWith('?')) return;
+function addExtrato(userAcc, texto) {
+  if (!userAcc.extrato) userAcc.extrato = [];
+  userAcc.extrato.unshift(`[${new Date().toLocaleDateString()}] ${texto}`);
+  if (userAcc.extrato.length > 10) userAcc.extrato.pop();
+}
 
-  const args = content.slice(1).trim().split(/ +/);
-  const command = args.shift().toLowerCase();
-  const guildId = message.guild.id;
-  const userId = message.author.id;
+function getMarketPanelEmbed() {
+  return new EmbedBuilder()
+    .setColor(0x900C3F)
+    .setTitle('💰 Zapher • Mercado & Lojinha Interativa')
+    .setDescription(
+      'Escolha uma categoria abaixo. O menu vai abrir opções com botões individuais.\n' +
+      'Se tiveres saldo suficiente na carteira, o item vai direto para o teu inventário!\n\n' +
+      '**🛒 Categorias Disponíveis:**\n' +
+      '• **🚗 Veículos** (Motos, Carros Desportivos, Hipercarros)\n' +
+      '• **🏡 Casas** (Apartamentos, Mansões, Ilhas)\n' +
+      '• **📱 Celulares** (Smartphones de última geração)\n' +
+      '• **👑 Cargos** (VIPs exclusivos por 30 dias)\n' +
+      '• **⚡ Upgrades** (Multiplicadores de ganho e sorte)\n' +
+      '• **🔫 Armamento** (Kits táticos para assaltos)\n' +
+      '• **💳 Conta** (Consulta rápida de saldo, poupança e daily)'
+    )
+    .setFooter({ text: 'Zapher Economy System • Variedade Máxima' });
+}
 
-  try {
-    const userEco = processBalance(guildId, userId);
+function getMarketPanelButtons() {
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('eco_cat_veiculos').setLabel('🚗 Veículos').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('eco_cat_casas').setLabel('🏡 Casas').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('eco_cat_celulares').setLabel('📱 Celulares').setStyle(ButtonStyle.Primary)
+  );
 
-    if (command === 'saldo' || command === 'carteira') {
-      const targetUser = message.mentions.users.first() || message.author;
-      const targetEco = processBalance(guildId, targetUser.id);
-      return message.reply(`💰 **Saldo de <@${targetUser.id}>**\n💵 Carteira: **$${targetEco.wallet}**\n🏦 Banco: **$${targetEco.bank}**`);
-    }
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('eco_cat_cargos').setLabel('👑 Cargos').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('eco_cat_upgrades').setLabel('⚡ Upgrades').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('eco_cat_armamento').setLabel('🔫 Armamento').setStyle(ButtonStyle.Success)
+  );
 
-    if (command === 'patrimonio') {
-      const total = userEco.wallet + userEco.bank;
-      return message.reply(`💎 O teu patrimônio total é de **$${total}** (Carteira: $${userEco.wallet} | Banco: $${userEco.bank})`);
-    }
+  const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('eco_btn_saldo').setLabel('💳 Meu Saldo').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('eco_btn_poupanca').setLabel('🏦 Poupança').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('eco_btn_daily').setLabel('🎁 Daily').setStyle(ButtonStyle.Secondary)
+  );
 
-    if (command === 'daily') {
-      const agora = Date.now();
-      if (agora - userEco.lastDaily < 86400000) {
-        return message.reply('⏳ Já resgataste o teu daily hoje! Volta amanhã.');
-      }
-      userEco.wallet += 500;
-      userEco.lastDaily = agora;
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      saveEconomyData(data);
-      return message.reply('🎁 Resgataste **$500** com sucesso no teu daily!');
-    }
-
-    if (command === 'trabalhar' || command === 'work') {
-      const agora = Date.now();
-      if (agora - userEco.lastWork < 3600000) {
-        return message.reply('⏳ Estás cansado! Descansa um pouco antes de voltar a trabalhar.');
-      }
-      const ganho = Math.floor(Math.random() * 200) + 50;
-      userEco.wallet += ganho;
-      userEco.lastWork = agora;
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      saveEconomyData(data);
-      return message.reply(`🔨 Trabalhaste duramente e ganhaste **$${ganho}**!`);
-    }
-
-    if (command === 'minerar' || command === 'mine') {
-      const agora = Date.now();
-      if (agora - userEco.lastMine < 1800000) {
-        return message.reply('⏳ A tua picareta está a arrefecer! Aguarda um pouco.');
-      }
-      const ganho = Math.floor(Math.random() * 300);
-      userEco.wallet += ganho;
-      userEco.lastMine = agora;
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      saveEconomyData(data);
-      return message.reply(`⛏️ Foste minerar e encontraste minérios que renderam **$${ganho}**!`);
-    }
-
-    if (command === 'depositar' || command === 'dep') {
-      const qtd = parseInt(args[0]);
-      if (!qtd || qtd <= 0) return message.reply('❌ Indica uma quantia válida para depositar.');
-      if (userEco.wallet < qtd) return message.reply('❌ Não tens esse dinheiro todo na carteira.');
-      userEco.wallet -= qtd;
-      userEco.bank += qtd;
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      saveEconomyData(data);
-      return message.reply(`✅ Depositaste **$${qtd}** no banco com sucesso!`);
-    }
-
-    if (command === 'sacar' || command === 'withdraw' || command === 'sac') {
-      const qtd = parseInt(args[0]);
-      if (!qtd || qtd <= 0) return message.reply('❌ Indica uma quantia válida para sacar.');
-      if (userEco.bank < qtd) return message.reply('❌ Não tens esse dinheiro todo no banco.');
-      userEco.bank -= qtd;
-      userEco.wallet += qtd;
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      saveEconomyData(data);
-      return message.reply(`✅ Sacaste **$${qtd}** do banco com sucesso!`);
-    }
-
-    if (command === 'transferir' || command === 'pix') {
-      const alvo = message.mentions.users.first();
-      const qtd = parseInt(args[1]);
-      if (!alvo || !qtd || qtd <= 0) return message.reply('❌ Uso correto: `?transferir @usuario <quantia>`');
-      if (alvo.id === userId) return message.reply('❌ Não podes transferir dinheiro para ti mesmo.');
-      if (userEco.wallet < qtd) return message.reply('❌ Não tens saldo suficiente na carteira.');
-
-      const alvoEco = processBalance(guildId, alvo.id);
-      userEco.wallet -= qtd;
-      alvoEco.wallet += qtd;
-
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      data[guildId][alvo.id] = alvoEco;
-      saveEconomyData(data);
-      return message.reply(`💸 Transferiste **$${qtd}** com sucesso para <@${alvo.id}>!`);
-    }
-
-    if (command === 'perfil') {
-      const embed = new EmbedBuilder()
-        .setColor(0x00AE86)
-        .setTitle(`💳 Perfil de ${message.author.username}`)
-        .addFields(
-          { name: '💵 Carteira', value: `$${userEco.wallet}`, inline: true },
-          { name: '🏦 Banco', value: `$${userEco.bank}`, inline: true },
-          { name: '💎 Total', value: `$${userEco.wallet + userEco.bank}`, inline: true }
-        );
-      return message.reply({ embeds: [embed] });
-    }
-
-    if (command === 'rank' || command === 'top') {
-      const data = getEconomyData();
-      const guildData = data[guildId] || {};
-      const sorted = Object.entries(guildData)
-        .map(([id, eco]) => ({ id, total: eco.wallet + eco.bank }))
-        .sort((a, b) => b.total - a.total)
-        .slice(0, 10);
-
-      if (sorted.length === 0) return message.reply('📊 Ainda não há dados de economia.');
-      const desc = sorted.map((u, i) => `${i + 1}. <@${u.id}> — **$${u.total}**`).join('\n');
-      const embed = new EmbedBuilder().setColor(0xF1C40F).setTitle('🏆 Top 10 Mais Ricos').setDescription(desc);
-      return message.reply({ embeds: [embed] });
-    }
-
-    if (command === 'extrato') {
-      return message.reply(`📄 **Extrato da Conta**\nCarteira: $${userEco.wallet}\nBanco: $${userEco.bank}\nTotal: $${userEco.wallet + userEco.bank}`);
-    }
-
-    if (command === 'investir') {
-      const qtd = parseInt(args[0]);
-      if (!qtd || qtd <= 0 || userEco.wallet < qtd) return message.reply('❌ Quantia inválida ou saldo insuficiente.');
-      userEco.wallet -= qtd;
-      const lucro = Math.random() > 0.4 ? Math.floor(qtd * 1.5) : 0;
-      userEco.wallet += lucro;
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      saveEconomyData(data);
-      if (lucro > 0) return message.reply(`📈 O teu investimento rendeu frutos! Lucraste e ficaste com **$${lucro}** de retorno.`);
-      return message.reply(`📉 O investimento correu mal e perdeste os **$${qtd}** investidos.`);
-    }
-
-    if (command === 'loteria') {
-      const qtd = parseInt(args[0]);
-      if (!qtd || qtd <= 0 || userEco.wallet < qtd) return message.reply('❌ Quantia inválida.');
-      userEco.wallet -= qtd;
-      const ganhou = Math.random() < 0.15;
-      if (ganhou) {
-        const premio = qtd * 5;
-        userEco.wallet += premio;
-        const data = getEconomyData();
-        data[guildId][userId] = userEco;
-        saveEconomyData(data);
-        return message.reply(`🎉 PARABÉNS! Acertaste na loteria e ganhaste **$${premio}**!`);
-      }
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      saveEconomyData(data);
-      return message.reply(`😢 Não foi desta vez! Perdeste os **$${qtd}** do bilhete.`);
-    }
-
-    if (command === 'paineleconomia' || command === 'mercado' || command === 'shop') {
-      const embed = new EmbedBuilder()
-        .setColor(0x3498DB)
-        .setTitle('🛒 Mercado & Lojinha do Servidor')
-        .setDescription('Escolha um dos itens abaixo para comprar utilizando o seu saldo da carteira:')
-        .addFields(
-          { name: '🎟️ VIP Semanal', value: 'Preço: **$5000**', inline: true },
-          { name: '⛏️ Picareta de Ouro', value: 'Preço: **$2500**', inline: true }
-        )
-        .setFooter({ text: 'Sistema de Economia • Zapher' });
-      return message.reply({ embeds: [embed] });
-    }
-
-    if (command === 'apostar' || command === 'coinflip') {
-      const qtd = parseInt(args[0]);
-      const escolha = args[1]?.toLowerCase();
-      if (!qtd || qtd <= 0 || userEco.wallet < qtd || !['cara', 'coroa'].includes(escolha)) {
-        return message.reply('❌ Uso correto: `?apostar <quantia> <cara/coroa>`');
-      }
-      userEco.wallet -= qtd;
-      const resultado = Math.random() < 0.5 ? 'cara' : 'coroa';
-      if (escolha === resultado) {
-        userEco.wallet += qtd * 2;
-        const data = getEconomyData();
-        data[guildId][userId] = userEco;
-        saveEconomyData(data);
-        return message.reply(`🪙 Deu **${resultado}**! Ganhaste a aposta e levaste **$${qtd * 2}**!`);
-      }
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      saveEconomyData(data);
-      return message.reply(`🪙 Deu **${resultado}**! Infelizmente perdeste os **$${qtd}**.`);
-    }
-
-    if (command === 'slots') {
-      const qtd = parseInt(args[0]);
-      if (!qtd || qtd <= 0 || userEco.wallet < qtd) return message.reply('❌ Quantia inválida.');
-      userEco.wallet -= qtd;
-      const emojis = ['🍎', '🍋', '🍒', '💎', '7️⃣'];
-      const r1 = emojis[Math.floor(Math.random() * emojis.length)];
-      const r2 = emojis[Math.floor(Math.random() * emojis.length)];
-      const r3 = emojis[Math.floor(Math.random() * emojis.length)];
-      
-      if (r1 === r2 && r2 === r3) {
-        const premio = qtd * 10;
-        userEco.wallet += premio;
-        const data = getEconomyData();
-        data[guildId][userId] = userEco;
-        saveEconomyData(data);
-        return message.reply(`🎰 | ${r1} | ${r2} | ${r3} |\n🎉 Incrível! Três iguais! Ganhaste **$${premio}**!`);
-      }
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      saveEconomyData(data);
-      return message.reply(`🎰 | ${r1} | ${r2} | ${r3} |\n❌ Não foi desta vez, perdeste **$${qtd}**.`);
-    }
-
-  } catch (err) {
-    return message.reply('❌ Não foi possível executar este comando de economia via prefixo. Tente usar o comando em barra (`/`).');
-  }
+  return [row1, row2, row3];
 }
 
 async function handleEconomyInteraction(interaction) {
+  const data = getEcoData();
+  const agora = Date.now();
+
+  if (interaction.isButton() && interaction.customId.startsWith('eco_')) {
+    const userAcc = getUserAccount(data, interaction.user.id);
+    const customId = interaction.customId;
+
+    if (customId === 'eco_cat_veiculos') {
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('buy_Moto Esportiva_350000').setLabel('Moto (R$ 350k)').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('buy_Carro Desportivo_1200000').setLabel('Desportivo (R$ 1.2M)').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('buy_Supercarro Luxo_4500000').setLabel('Supercarro (R$ 4.5M)').setStyle(ButtonStyle.Primary)
+      );
+      return interaction.reply({ content: '🚗 **Escolhe o teu veículo de sonho:**', components: [row], ephemeral: true });
+    }
+
+    if (customId === 'eco_cat_casas') {
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('buy_Kitnet Central_250000').setLabel('Kitnet (R$ 250k)').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('buy_Apartamento de Luxo_1800000').setLabel('Apartamento (R$ 1.8M)').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('buy_Mansao com Piscina_12000000').setLabel('Mansão (R$ 12M)').setStyle(ButtonStyle.Primary)
+      );
+      return interaction.reply({ content: '🏡 **Escolhe o teu imóvel:**', components: [row], ephemeral: true });
+    }
+
+    if (customId === 'eco_cat_celulares') {
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('buy_Smartphone Basico_15000').setLabel('Básico (R$ 15k)').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('buy_Smartphone Pro Max_85000').setLabel('Pro Max (R$ 85k)').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('buy_Edicao Limitada Ouro_300000').setLabel('Gold (R$ 300k)').setStyle(ButtonStyle.Primary)
+      );
+      return interaction.reply({ content: '📱 **Escolhe o teu telemóvel:**', components: [row], ephemeral: true });
+    }
+
+    if (customId === 'eco_cat_cargos') {
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('buy_VIP Bronze (30d)_500000').setLabel('VIP Bronze (R$ 500k)').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('buy_VIP Prata (30d)_1500000').setLabel('VIP Prata (R$ 1.5M)').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('buy_VIP Ouro (30d)_5000000').setLabel('VIP Ouro (R$ 5M)').setStyle(ButtonStyle.Success)
+      );
+      return interaction.reply({ content: '👑 **Escolhe o teu cargo VIP:**', components: [row], ephemeral: true });
+    }
+
+    if (customId === 'eco_cat_upgrades') {
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('buy_Upgrade Renda Nv2_200000').setLabel('Renda Nv2 (R$ 200k)').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('buy_Kit Fuga Rapida_450000').setLabel('Kit Fuga (R$ 450k)').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('buy_Amuleto da Sorte_800000').setLabel('Sorte (R$ 800k)').setStyle(ButtonStyle.Success)
+      );
+      return interaction.reply({ content: '⚡ **Escolhe o teu upgrade:**', components: [row], ephemeral: true });
+    }
+
+    if (customId === 'eco_cat_armamento') {
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('buy_Kit Tatico Leve_150000').setLabel('Kit Leve (R$ 150k)').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('buy_Kit Tatico Pesado_600000').setLabel('Kit Pesado (R$ 600k)').setStyle(ButtonStyle.Danger)
+      );
+      return interaction.reply({ content: '🔫 **Escolhe o teu armamento:**', components: [row], ephemeral: true });
+    }
+
+    if (customId.startsWith('buy_')) {
+      const partes = customId.split('_');
+      const nomeItem = partes[1];
+      const precoItem = parseInt(partes[2]);
+
+      if (userAcc.wallet < precoItem) {
+        return interaction.reply({ content: `❌ Dinheiro insuficiente na carteira! Precisas de **R$ ${precoItem.toLocaleString()}**, mas só tens **R$ ${userAcc.wallet.toLocaleString()}**.`, ephemeral: true });
+      }
+
+      userAcc.wallet -= precoItem;
+      userAcc.inventory.push(nomeItem);
+      addExtrato(userAcc, `Comprou ${nomeItem} por R$ ${precoItem.toLocaleString()}`);
+      saveEcoData(data);
+
+      return interaction.reply({ content: `✅ **Compra efetuada com sucesso!** Adquiriste **${nomeItem}** por **R$ ${precoItem.toLocaleString()}**. Consulta o teu inventário com \`/perfil\`.`, ephemeral: true });
+    }
+
+    if (customId === 'eco_btn_saldo') {
+      const total = userAcc.wallet + userAcc.bank;
+      return interaction.reply({ content: `💳 **Saldo:** Carteira: R$ ${userAcc.wallet.toLocaleString()} | Banco: R$ ${userAcc.bank.toLocaleString()} | Total: R$ ${total.toLocaleString()}`, ephemeral: true });
+    }
+    if (customId === 'eco_btn_poupanca') {
+      return interaction.reply({ content: `🏦 **Poupança:** Tens R$ ${userAcc.bank.toLocaleString()} guardados no banco.`, ephemeral: true });
+    }
+    if (customId === 'eco_btn_daily') {
+      const umDia = 24 * 60 * 60 * 1000;
+      if (agora - userAcc.lastDaily < umDia) return interaction.reply({ content: '⏳ Já resgataste o teu daily hoje!', ephemeral: true });
+      userAcc.wallet += 10000;
+      userAcc.lastDaily = agora;
+      addExtrato(userAcc, 'Resgatou o Daily via Painel (R$ 10.000)');
+      saveEcoData(data);
+      return interaction.reply({ content: '🎁 Resgataste o teu daily de **R$ 10.000**!', ephemeral: true });
+    }
+  }
+
   if (!interaction.isChatInputCommand()) return;
-  const { commandName, options, guild, user } = interaction;
-  const guildId = guild.id;
-  const userId = user.id;
 
-  try {
-    const userEco = processBalance(guildId, userId);
+  const { commandName, options, user } = interaction;
+  const userAcc = getUserAccount(data, user.id);
 
-    if (commandName === 'saldo') {
-      const targetUser = options.getUser('usuario') || user;
-      const targetEco = processBalance(guildId, targetUser.id);
-      return interaction.reply({ content: `💰 **Saldo de <@${targetUser.id}>**\n💵 Carteira: **$${targetEco.wallet}**\n🏦 Banco: **$${targetEco.bank}**`, ephemeral: true });
+  if (commandName === 'mercado' || commandName === 'painel-economia' || commandName === 'loja') {
+    return interaction.reply({ embeds: [getMarketPanelEmbed()], components: getMarketPanelButtons() });
+  }
+
+  if (commandName === 'addmoney' || commandName === 'removemoney') {
+    if (!interaction.member.permissions.has('Administrator')) {
+      return interaction.reply({ content: '❌ Apenas administradores do servidor podem usar este comando.', ephemeral: true });
     }
-    if (commandName === 'patrimonio') {
-      const total = userEco.wallet + userEco.bank;
-      return interaction.reply({ content: `💎 O teu patrimônio total é de **$${total}**`, ephemeral: true });
-    }
-    if (commandName === 'daily') {
-      const agora = Date.now();
-      if (agora - userEco.lastDaily < 86400000) {
-        return interaction.reply({ content: '⏳ Já resgataste o teu daily hoje!', ephemeral: true });
-      }
-      userEco.wallet += 500;
-      userEco.lastDaily = agora;
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      saveEconomyData(data);
-      return interaction.reply({ content: '🎁 Resgataste **$500** com sucesso!', ephemeral: true });
-    }
-    if (commandName === 'trabalhar') {
-      const agora = Date.now();
-      if (agora - userEco.lastWork < 3600000) {
-        return interaction.reply({ content: '⏳ Estás cansado!', ephemeral: true });
-      }
-      const ganho = Math.floor(Math.random() * 200) + 50;
-      userEco.wallet += ganho;
-      userEco.lastWork = agora;
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      saveEconomyData(data);
-      return interaction.reply({ content: `🔨 Trabalhaste e ganhaste **$${ganho}**!` });
-    }
-    if (commandName === 'minerar') {
-      const agora = Date.now();
-      if (agora - userEco.lastMine < 1800000) {
-        return interaction.reply({ content: '⏳ A picareta está a arrefecer!', ephemeral: true });
-      }
-      const ganho = Math.floor(Math.random() * 300);
-      userEco.wallet += ganho;
-      userEco.lastMine = agora;
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      saveEconomyData(data);
-      return interaction.reply({ content: `⛏️ Mineraste e ganhaste **$${ganho}**!` });
-    }
-    if (commandName === 'depositar') {
-      const qtd = options.getInteger('quantia');
-      if (userEco.wallet < qtd) return interaction.reply({ content: '❌ Dinheiro insuficiente na carteira.', ephemeral: true });
-      userEco.wallet -= qtd;
-      userEco.bank += qtd;
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      saveEconomyData(data);
-      return interaction.reply({ content: `✅ Depositaste **$${qtd}**!`, ephemeral: true });
-    }
-    if (commandName === 'sacar') {
-      const qtd = options.getInteger('quantia');
-      if (userEco.bank < qtd) return interaction.reply({ content: '❌ Dinheiro insuficiente no banco.', ephemeral: true });
-      userEco.bank -= qtd;
-      userEco.wallet += qtd;
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      saveEconomyData(data);
-      return interaction.reply({ content: `✅ Sacaste **$${qtd}**!`, ephemeral: true });
-    }
-    if (commandName === 'transferir') {
-      const alvo = options.getUser('usuario');
-      const qtd = options.getInteger('quantia');
-      if (alvo.id === userId) return interaction.reply({ content: '❌ Não podes transferir para ti mesmo.', ephemeral: true });
-      if (userEco.wallet < qtd) return interaction.reply({ content: '❌ Saldo insuficiente.', ephemeral: true });
-      const alvoEco = processBalance(guildId, alvo.id);
-      userEco.wallet -= qtd;
-      alvoEco.wallet += qtd;
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      data[guildId][alvo.id] = alvoEco;
-      saveEconomyData(data);
-      return interaction.reply({ content: `💸 Transferiste **$${qtd}** para <@${alvo.id}>!` });
-    }
-    if (commandName === 'perfil') {
-      const embed = new EmbedBuilder().setColor(0x00AE86).setTitle(`💳 Perfil`).addFields({ name: 'Carteira', value: `$${userEco.wallet}`, inline: true }, { name: 'Banco', value: `$${userEco.bank}`, inline: true });
-      return interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-    if (commandName === 'rank') {
-      const data = getEconomyData();
-      const guildData = data[guildId] || {};
-      const sorted = Object.entries(guildData).map(([id, eco]) => ({ id, total: eco.wallet + eco.bank })).sort((a, b) => b.total - a.total).slice(0, 10);
-      const desc = sorted.map((u, i) => `${i + 1}. <@${u.id}> — **$${u.total}**`).join('\n');
-      const embed = new EmbedBuilder().setColor(0xF1C40F).setTitle('🏆 Top 10 Mais Ricos').setDescription(desc || 'Vazio');
-      return interaction.reply({ embeds: [embed] });
-    }
-    if (commandName === 'extrato') {
-      return interaction.reply({ content: `📄 Carteira: $${userEco.wallet} | Banco: $${userEco.bank}`, ephemeral: true });
-    }
-    if (commandName === 'investir') {
-      const qtd = options.getInteger('quantia');
-      if (userEco.wallet < qtd) return interaction.reply({ content: '❌ Saldo insuficiente.', ephemeral: true });
-      userEco.wallet -= qtd;
-      const lucro = Math.random() > 0.4 ? Math.floor(qtd * 1.5) : 0;
-      userEco.wallet += lucro;
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      saveEconomyData(data);
-      return interaction.reply({ content: lucro > 0 ? `📈 Lucraste e ficaste com **$${lucro}**!` : `📉 O investimento falhou.` });
-    }
-    if (commandName === 'loteria') {
-      const qtd = options.getInteger('quantia');
-      if (userEco.wallet < qtd) return interaction.reply({ content: '❌ Saldo insuficiente.', ephemeral: true });
-      userEco.wallet -= qtd;
-      const ganhou = Math.random() < 0.15;
-      if (ganhou) {
-        userEco.wallet += qtd * 5;
-        const data = getEconomyData();
-        data[guildId][userId] = userEco;
-        saveEconomyData(data);
-        return interaction.reply({ content: `🎉 Ganhaste a loteria!` });
-      }
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      saveEconomyData(data);
-      return interaction.reply({ content: `😢 Perdeste na loteria.` });
-    }
-    if (commandName === 'paineleconomia') {
-      const embed = new EmbedBuilder()
-        .setColor(0x3498DB)
-        .setTitle('🛒 Mercado & Lojinha do Servidor')
-        .setDescription('Painel de itens disponíveis para compra no servidor:')
-        .addFields(
-          { name: '🎟️ VIP Semanal', value: 'Preço: **$5000**', inline: true },
-          { name: '⛏️ Picareta de Ouro', value: 'Preço: **$2500**', inline: true }
-        );
-      return interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-    if (commandName === 'apostar') {
-      const qtd = options.getInteger('quantia');
-      const escolha = options.getString('escolha');
-      if (userEco.wallet < qtd) return interaction.reply({ content: '❌ Saldo insuficiente.', ephemeral: true });
-      userEco.wallet -= qtd;
-      const resultado = Math.random() < 0.5 ? 'cara' : 'coroa';
-      if (escolha === resultado) {
-        userEco.wallet += qtd * 2;
-        const data = getEconomyData();
-        data[guildId][userId] = userEco;
-        saveEconomyData(data);
-        return interaction.reply({ content: `🪙 Deu **${resultado}**! Ganhaste!` });
-      }
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      saveEconomyData(data);
-      return interaction.reply({ content: `🪙 Deu **${resultado}**! Perdeste.` });
-    }
-    if (commandName === 'slots') {
-      const qtd = options.getInteger('quantia');
-      if (userEco.wallet < qtd) return interaction.reply({ content: '❌ Saldo insuficiente.', ephemeral: true });
-      userEco.wallet -= qtd;
-      const emojis = ['🍎', '🍋', '🍒', '💎', '7️⃣'];
-      const r1 = emojis[Math.floor(Math.random() * emojis.length)];
-      const r2 = emojis[Math.floor(Math.random() * emojis.length)];
-      const r3 = emojis[Math.floor(Math.random() * emojis.length)];
-      if (r1 === r2 && r2 === r3) {
-        userEco.wallet += qtd * 10;
-        const data = getEconomyData();
-        data[guildId][userId] = userEco;
-        saveEconomyData(data);
-        return interaction.reply({ content: `🎰 | ${r1} | ${r2} | ${r3} |\n🎉 Três iguais! Ganhaste!` });
-      }
-      const data = getEconomyData();
-      data[guildId][userId] = userEco;
-      saveEconomyData(data);
-      return interaction.reply({ content: `🎰 | ${r1} | ${r2} | ${r3} |\n❌ Não foi desta vez.` });
-    }
-  } catch (err) {
-    if (interaction.deferred || interaction.replied) {
-      return interaction.editReply({ content: '❌ Não foi possível executar este comando de economia por barra.' });
+    const alvo = options.getUser('usuario');
+    const valor = options.getInteger('valor');
+    const alvoAcc = getUserAccount(data, alvo.id);
+
+    if (commandName === 'addmoney') {
+      alvoAcc.wallet += valor;
+      addExtrato(alvoAcc, `Recebeu R$ ${valor.toLocaleString()} de um Admin.`);
+      saveEcoData(data);
+      return interaction.reply({ content: `✅ Adicionados **R$ ${valor.toLocaleString()}** à carteira de <@${alvo.id}>.` });
     } else {
-      return interaction.reply({ content: '❌ Não foi possível executar este comando de economia por barra.', ephemeral: true });
+      alvoAcc.wallet = Math.max(0, alvoAcc.wallet - valor);
+      addExtrato(alvoAcc, `Foram removidos R$ ${valor.toLocaleString()} por um Admin.`);
+      saveEcoData(data);
+      return interaction.reply({ content: `✅ Removidos **R$ ${valor.toLocaleString()}** da carteira de <@${alvo.id}>.` });
+    }
+  }
+
+  if (commandName === 'saldo' || commandName === 'patrimonio') {
+    const alvo = options.getUser('usuario') || user;
+    const alvoAcc = getUserAccount(data, alvo.id);
+    const total = alvoAcc.wallet + alvoAcc.bank;
+    const embed = new EmbedBuilder()
+      .setColor(0x2ECC71)
+      .setTitle(`💳 Património de ${alvo.tag}`)
+      .addFields(
+        { name: '💵 Carteira', value: `R$ ${alvoAcc.wallet.toLocaleString()}`, inline: true },
+        { name: '🏦 Banco', value: `R$ ${alvoAcc.bank.toLocaleString()}`, inline: true },
+        { name: '💎 Total', value: `R$ ${total.toLocaleString()}`, inline: false }
+      );
+    return interaction.reply({ embeds: [embed] });
+  }
+
+  if (commandName === 'depositar') {
+    const valor = options.getInteger('valor');
+    if (valor <= 0 || valor > userAcc.wallet) return interaction.reply({ content: '❌ Valor inválido.', ephemeral: true });
+    userAcc.wallet -= valor;
+    userAcc.bank += valor;
+    addExtrato(userAcc, `Depositou R$ ${valor.toLocaleString()} no banco.`);
+    saveEcoData(data);
+    return interaction.reply({ content: `✅ Depositaste **R$ ${valor.toLocaleString()}** no banco.` });
+  }
+
+  if (commandName === 'sacar') {
+    const valor = options.getInteger('valor');
+    if (valor <= 0 || valor > userAcc.bank) return interaction.reply({ content: '❌ Valor inválido.', ephemeral: true });
+    userAcc.bank -= valor;
+    userAcc.wallet += valor;
+    addExtrato(userAcc, `Sacou R$ ${valor.toLocaleString()} do banco.`);
+    saveEcoData(data);
+    return interaction.reply({ content: `✅ Sacaste **R$ ${valor.toLocaleString()}** do banco.` });
+  }
+
+  if (commandName === 'transferir') {
+    const alvo = options.getUser('usuario');
+    const valor = options.getInteger('valor');
+    if (alvo.id === user.id) return interaction.reply({ content: '❌ Não podes transferir para ti próprio.', ephemeral: true });
+    if (valor <= 0 || valor > userAcc.wallet) return interaction.reply({ content: '❌ Saldo insuficiente na carteira.', ephemeral: true });
+
+    const alvoAcc = getUserAccount(data, alvo.id);
+    userAcc.wallet -= valor;
+    alvoAcc.wallet += valor;
+    addExtrato(userAcc, `Pix enviado de R$ ${valor.toLocaleString()} para ${alvo.tag}`);
+    addExtrato(alvoAcc, `Pix recebido de R$ ${valor.toLocaleString()} de ${user.tag}`);
+    saveEcoData(data);
+    return interaction.reply({ content: `💸 Pix efetuado! Transferiste **R$ ${valor.toLocaleString()}** para <@${alvo.id}>.` });
+  }
+
+  if (commandName === 'perfil' || commandName === 'inventario') {
+    const embed = new EmbedBuilder()
+      .setColor(0x9B59B6)
+      .setTitle(`👤 Perfil & Inventário — ${user.tag}`)
+      .addFields(
+        { name: '📈 Nível de Trabalho', value: `Nível ${userAcc.jobLevel}`, inline: true },
+        { name: '🎒 Bens Adquiridos', value: `${userAcc.inventory.length ? userAcc.inventory.join(', ') : 'Nenhum bem adquirido'}`, inline: false }
+      );
+    return interaction.reply({ embeds: [embed] });
+  }
+
+  if (commandName === 'rank') {
+    const entries = Object.entries(data);
+    if (entries.length === 0) return interaction.reply({ content: '📊 Sem registros.', ephemeral: true });
+    const sorted = entries.map(([id, acc]) => ({ id, total: (acc.wallet || 0) + (acc.bank || 0) })).sort((a, b) => b.total - a.total).slice(0, 10);
+    let desc = '';
+    sorted.forEach((item, index) => {
+      const med = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `**#${index + 1}**`;
+      desc += `${med} <@${item.id}> — **R$ ${item.total.toLocaleString()}**\n`;
+    });
+    return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xF1C40F).setTitle('🏆 Top 10 Mais Ricos').setDescription(desc)] });
+  }
+
+  if (commandName === 'extrato') {
+    const hist = userAcc.extrato && userAcc.extrato.length ? userAcc.extrato.join('\n') : 'Sem movimentações.';
+    return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498DB).setTitle('📄 Extrato').setDescription(hist)], ephemeral: true });
+  }
+
+  if (commandName === 'daily') {
+    const umDia = 24 * 60 * 60 * 1000;
+    if (agora - userAcc.lastDaily < umDia) return interaction.reply({ content: '⏳ Já resgataste o teu daily hoje!', ephemeral: true });
+    userAcc.wallet += 10000;
+    userAcc.lastDaily = agora;
+    addExtrato(userAcc, 'Resgatou o Daily (R$ 10.000)');
+    saveEcoData(data);
+    return interaction.reply({ content: '🎁 Resgataste o teu daily de **R$ 10.000**!' });
+  }
+
+  if (commandName === 'weekly') {
+    const umaSemana = 7 * 24 * 60 * 60 * 1000;
+    if (agora - userAcc.lastWeekly < umaSemana) return interaction.reply({ content: '⏳ Já resgataste o teu bónus semanal esta semana!', ephemeral: true });
+    userAcc.wallet += 75000;
+    userAcc.lastWeekly = agora;
+    addExtrato(userAcc, 'Resgatou o Weekly (R$ 75.000)');
+    saveEcoData(data);
+    return interaction.reply({ content: '🎁 Resgataste o teu bónus semanal de **R$ 75.000**!' });
+  }
+
+  if (commandName === 'trabalhar') {
+    const cd = 2 * 60 * 1000;
+    if (agora - userAcc.lastWork < cd) return interaction.reply({ content: '⏳ Descansa um pouco antes de voltar ao trabalho.', ephemeral: true });
+    const ganho = Math.floor(Math.random() * 6000) + 4000;
+    userAcc.wallet += ganho;
+    userAcc.lastWork = agora;
+    if (Math.random() > 0.75) userAcc.jobLevel += 1;
+    saveEcoData(data);
+    return interaction.reply({ content: `💼 Trabalhaste afincadamente e ganhaste **R$ ${ganho.toLocaleString()}**!` });
+  }
+
+  if (commandName === 'minerar' || commandName === 'pescar' || commandName === 'cacar' || commandName === 'farmar') {
+    const ganho = Math.floor(Math.random() * 8000) + 3000;
+    userAcc.wallet += ganho;
+    saveEcoData(data);
+    return interaction.reply({ content: `✅ Foste ${commandName} e obtiveste um lucro de **R$ ${ganho.toLocaleString()}**!` });
+  }
+
+  if (commandName === 'roubar' || commandName === 'crime') {
+    const ganho = Math.floor(Math.random() * 15000) + 5000;
+    if (Math.random() > 0.5) {
+      userAcc.wallet += ganho;
+      saveEcoData(data);
+      return interaction.reply({ content: `🦹 Crime bem-sucedido! Fugiuste com **R$ ${ganho.toLocaleString()}**!` });
+    } else {
+      const perda = Math.floor(ganho / 2);
+      userAcc.wallet = Math.max(0, userAcc.wallet - perda);
+      saveEcoData(data);
+      return interaction.reply({ content: `🚨 A polícia apanhou-te! Pagaste uma multa de **R$ ${perda.toLocaleString()}**.` });
+    }
+  }
+
+  if (commandName === 'apostar' || commandName === 'slots') {
+    const valor = options.getInteger('valor');
+    if (valor <= 0 || valor > userAcc.wallet) return interaction.reply({ content: '❌ Saldo insuficiente na carteira.', ephemeral: true });
+    if (Math.random() < 0.48) {
+      userAcc.wallet += valor;
+      saveEcoData(data);
+      return interaction.reply({ content: `🎲 **Vitória!** A sorte esteve do teu lado e ganhaste **R$ ${valor.toLocaleString()}**.` });
+    } else {
+      userAcc.wallet -= valor;
+      saveEcoData(data);
+      return interaction.reply({ content: `🎲 **Derrota!** A banca recolheu os teus **R$ ${valor.toLocaleString()}**.` });
+    }
+  }
+
+  if (commandName === 'coinflip') {
+    const valor = options.getInteger('valor');
+    const escolha = options.getString('escolha');
+    if (valor <= 0 || valor > userAcc.wallet) return interaction.reply({ content: '❌ Saldo insuficiente na carteira.', ephemeral: true });
+    const resultado = Math.random() < 0.5 ? 'cara' : 'coroa';
+    if (escolha === resultado) {
+      userAcc.wallet += valor;
+      saveEcoData(data);
+      return interaction.reply({ content: `🪙 Deu **${resultado}**! Ganhaste **R$ ${valor.toLocaleString()}**.` });
+    } else {
+      userAcc.wallet -= valor;
+      saveEcoData(data);
+      return interaction.reply({ content: `🪙 Deu **${resultado}**! Perdeste **R$ ${valor.toLocaleString()}**.` });
+    }
+  }
+
+  if (commandName === 'roleta') {
+    const valor = options.getInteger('valor');
+    const corEscolhida = options.getString('cor');
+    if (valor <= 0 || valor > userAcc.wallet) return interaction.reply({ content: '❌ Saldo insuficiente.', ephemeral: true });
+    const cores = ['vermelho', 'preto', 'vermelho', 'preto', 'verde'];
+    const sorteada = cores[Math.floor(Math.random() * cores.length)];
+    
+    if (corEscolhida === sorteada) {
+      const multiplicador = sorteada === 'verde' ? 14 : 2;
+      const premio = valor * multiplicador;
+      userAcc.wallet += (premio - valor);
+      saveEcoData(data);
+      return interaction.reply({ content: `🎰 A roleta parou em **${sorteada.toUpperCase()}**! Acertaste e levaste **R$ ${premio.toLocaleString()}**!` });
+    } else {
+      userAcc.wallet -= valor;
+      saveEcoData(data);
+      return interaction.reply({ content: `🎰 A roleta parou em **${sorteada.toUpperCase()}**! Perdeste **R$ ${valor.toLocaleString()}**.` });
+    }
+  }
+
+  if (commandName === 'investir') {
+    const opcao = options.getString('opcao');
+    let custo = opcao === 'crypto' ? 50000 : opcao === 'acoes' ? 35000 : 20000;
+    if (userAcc.wallet < custo) return interaction.reply({ content: `❌ Não tens dinheiro suficiente na carteira para este investimento (Custo: R$ ${custo.toLocaleString()}).`, ephemeral: true });
+
+    userAcc.wallet -= custo;
+    const multiplicador = Math.random() < 0.5 ? 1.8 : 0.6;
+    const retorno = Math.floor(custo * multiplicador);
+    userAcc.wallet += retorno;
+    addExtrato(userAcc, `Investiu R$ ${custo.toLocaleString()} e obteve retorno de R$ ${retorno.toLocaleString()}`);
+    saveEcoData(data);
+
+    const lucroPreju = retorno >= custo;
+    return interaction.reply({ content: `📈 **Investimento Concluído!** Aplicaste R$ ${custo.toLocaleString()}. O retorno foi de **R$ ${retorno.toLocaleString()}** (${lucroPreju ? '🎉 Lucro!' : '📉 Prejuízo'}).` });
+  }
+
+  if (commandName === 'emprestimo') {
+    const valor = options.getInteger('valor');
+    if (valor <= 0 || valor > 1000000) return interaction.reply({ content: '❌ Podes pedir empréstimos até R$ 1.000.000.', ephemeral: true });
+    userAcc.wallet += valor;
+    userAcc.bank -= Math.floor(valor * 1.15);
+    addExtrato(userAcc, `Pediu empréstimo bancário de R$ ${valor.toLocaleString()}`);
+    saveEcoData(data);
+    return interaction.reply({ content: `🏦 O banco aprovou o teu empréstimo de **R$ ${valor.toLocaleString()}** com juros aplicados.` });
+  }
+
+  if (commandName === 'loteria') {
+    const preco = 5000;
+    if (userAcc.wallet < preco) return interaction.reply({ content: '❌ Cada bilhete de loteria custa R$ 5.000.', ephemeral: true });
+    userAcc.wallet -= preco;
+    
+    if (Math.random() < 0.08) {
+      const premioLoteria = 250000;
+      userAcc.wallet += premioLoteria;
+      addExtrato(userAcc, `Ganhou na Loteria (R$ ${premioLoteria.toLocaleString()})`);
+      saveEcoData(data);
+      return interaction.reply({ content: `🎰 **JACKPOT! ACERTASTE NA LOTERIA!** Levaste o prémio máximo de **R$ ${premioLoteria.toLocaleString()}** para casa!` });
+    } else {
+      saveEcoData(data);
+      return interaction.reply({ content: '🎟️ Compraste o bilhete de loteria, mas infelizmente não foi desta vez que saíste premiado.' });
     }
   }
 }
 
-module.exports = { economySlashCommands, handleEconomyMessage, handleEconomyInteraction };
+module.exports = { economySlashCommands, handleEconomyInteraction };
