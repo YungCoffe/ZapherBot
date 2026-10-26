@@ -2,7 +2,7 @@
 
 const { EmbedBuilder, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { JsonStore } = require('./storage');
-const { EPHEMERAL, eph, truncate, fmtDate, unix, randInt, respond } = require('./utils');
+const { EPHEMERAL, ALL_AMOUNT, HALF_AMOUNT, eph, truncate, normalize, fmtDate, unix, randInt, respond } = require('./utils');
 
 // ID do dono do bot (opcional). Defina a variável de ambiente CREATOR_ID no Render.
 const CREATOR_ID = process.env.CREATOR_ID || '';
@@ -29,7 +29,10 @@ const ECONOMY = {
   lottery: { price: 5000, chance: 0.02, prize: 200000 },
   loan: { base: 500000, perLevel: 100000, interest: 0.2 },
   crime: { cooldown: 3 * MINUTE, baseChance: 0.45, min: 15000, max: 60000, fineMin: 10000, fineMax: 25000 },
-  rob: { cooldown: 5 * MINUTE, baseChance: 0.4, minTarget: 5000, minPct: 0.1, maxPct: 0.3, cap: 150000, fineMin: 8000, fineMax: 20000 }
+  rob: { cooldown: 5 * MINUTE, baseChance: 0.4, minTarget: 5000, minPct: 0.1, maxPct: 0.3, cap: 150000, fineMin: 8000, fineMax: 20000 },
+  sellRate: 0.5,             // /vender devolve 50% do preço
+  caixa: { price: 50000 },
+  business: { max: 3, capHours: 24 }
 };
 
 const ACTIVITIES = {
@@ -106,6 +109,29 @@ for (const [categoria, cat] of Object.entries(CATALOG)) {
   for (const item of cat.itens) ITEMS[item.id] = { ...item, categoria };
 }
 
+const PROFESSIONS = {
+  entregador: { nome: 'Entregador', emoji: '🛵', nivel: 1, mult: 1.0 },
+  vendedor: { nome: 'Vendedor', emoji: '🛍️', nivel: 3, mult: 1.2 },
+  programador: { nome: 'Programador', emoji: '💻', nivel: 6, mult: 1.5 },
+  medico: { nome: 'Médico', emoji: '🩺', nivel: 10, mult: 1.9 },
+  empresario: { nome: 'Empresário', emoji: '🕴️', nivel: 15, mult: 2.4 }
+};
+
+const BUSINESSES = {
+  barraca: { nome: 'Barraca de Lanches', emoji: '🌭', preco: 800000, renda: 8000 },
+  lanchonete: { nome: 'Lanchonete', emoji: '🍔', preco: 3000000, renda: 35000 },
+  loja: { nome: 'Loja de Roupas', emoji: '👕', preco: 12000000, renda: 150000 },
+  fabrica: { nome: 'Fábrica', emoji: '🏭', preco: 50000000, renda: 650000 }
+};
+
+const CAIXA_PRIZES = [
+  { chance: 0.55, min: 8000, max: 20000, texto: 'Só uns trocados...' },
+  { chance: 0.28, min: 25000, max: 45000, texto: 'Nada mal!' },
+  { chance: 0.12, min: 50000, max: 90000, texto: 'Boa sorte hoje! 🍀' },
+  { chance: 0.045, min: 120000, max: 250000, texto: 'Que achado! 💰' },
+  { chance: 0.005, min: 1000000, max: 1000000, texto: '🌟 **PRÊMIO LENDÁRIO!** 🌟' }
+];
+
 /* ============================================================
  *  COMANDOS SLASH
  * ============================================================ */
@@ -151,7 +177,18 @@ const economySlashCommands = [
   new SlashCommandBuilder().setName('loteria').setDescription('Compra um bilhete de loteria por R$ 5.000'),
 
   new SlashCommandBuilder().setName('addmoney').setDescription('[DONO] Adiciona dinheiro a um usuário').addUserOption(o => o.setName('usuario').setDescription('Alvo').setRequired(true)).addIntegerOption(valorOpt()),
-  new SlashCommandBuilder().setName('removemoney').setDescription('[DONO] Remove dinheiro de um usuário').addUserOption(o => o.setName('usuario').setDescription('Alvo').setRequired(true)).addIntegerOption(valorOpt())
+  new SlashCommandBuilder().setName('removemoney').setDescription('[DONO] Remove dinheiro de um usuário').addUserOption(o => o.setName('usuario').setDescription('Alvo').setRequired(true)).addIntegerOption(valorOpt()),
+
+  // ---- Novidades da economia ----
+  new SlashCommandBuilder().setName('vender').setDescription('Vende um item do teu inventário por 50% do preço').addStringOption(o => o.setName('item').setDescription('Item a vender').setRequired(true).setAutocomplete(true)),
+  new SlashCommandBuilder().setName('cooldowns').setDescription('Mostra quando podes usar cada comando de ganho'),
+  new SlashCommandBuilder().setName('profissao').setDescription('Escolhe a tua profissão (mais nível = mais ganhos)').addStringOption(o => o.setName('escolha').setDescription('Nova profissão (vazio = ver a lista)').setRequired(false).addChoices(
+    ...Object.entries(PROFESSIONS).map(([id, p]) => ({ name: `${p.nome} (nível ${p.nivel}+)`, value: id }))
+  )),
+  new SlashCommandBuilder().setName('negocios').setDescription('Compra negócios que rendem dinheiro por hora'),
+  new SlashCommandBuilder().setName('coletar').setDescription('Coleta o rendimento acumulado dos teus negócios'),
+  new SlashCommandBuilder().setName('caixa').setDescription('Abre uma caixa misteriosa por R$ 50.000'),
+  new SlashCommandBuilder().setName('blackjack').setDescription('Joga blackjack contra o dealer').addIntegerOption(valorOpt('Aposta'))
 ];
 
 /* ============================================================
@@ -173,7 +210,10 @@ const ACCOUNT_TEMPLATE = {
   investimento: 0,
   debt: 0,
   cooldowns: {},
-  vips: []
+  vips: [],
+  profession: 'entregador',
+  businesses: {},
+  lastCollect: 0
 };
 
 function getUserAccount(userId) {
@@ -195,6 +235,32 @@ const credit = (acc, value) => { acc.wallet = Math.min(MAX_BALANCE, acc.wallet +
 const has = (acc, nome) => acc.inventory.includes(nome);
 const luck = (acc) => (has(acc, 'Amuleto da Sorte') ? ECONOMY.gamble.luckBonus : 0);
 const netWorth = (acc) => (acc.wallet || 0) + (acc.bank || 0) - (acc.debt || 0);
+const ITEM_LIST = Object.values(ITEMS);
+
+/** Lê o "valor" do comando. Pelo prefixo aceita "tudo" e "metade" (relativos a `max`). */
+function resolveAmount(interaction, max) {
+  const v = interaction.options.getInteger('valor');
+  if (v === ALL_AMOUNT) return max;
+  if (v === HALF_AMOUNT) return Math.floor(max / 2);
+  return v;
+}
+
+/** Dá dinheiro a alguém (usado por outros módulos, ex.: bónus de nível). */
+function giveMoney(userId, valor, nota) {
+  const acc = getUserAccount(userId);
+  credit(acc, valor);
+  if (nota) addExtrato(acc, `${nota} (+${fmt(valor)})`);
+  saveEcoData();
+}
+
+const businessRate = (acc) => Object.entries(acc.businesses || {}).reduce((sum, [id, n]) => sum + (BUSINESSES[id]?.renda || 0) * n, 0);
+
+function pendingBusiness(acc, now) {
+  const rate = businessRate(acc);
+  if (!rate || !acc.lastCollect) return 0;
+  const horas = Math.min(ECONOMY.business.capHours, (now - acc.lastCollect) / (60 * MINUTE));
+  return Math.floor(rate * Math.max(0, horas));
+}
 
 function incomeMultiplier(acc) {
   return 1 + (acc.jobLevel - 1) * ECONOMY.levelBonus + (has(acc, 'Upgrade Renda Nv2') ? ECONOMY.rendaUpgradeBonus : 0);
@@ -349,11 +415,13 @@ async function buyItem(interaction, acc, itemId) {
 
 async function handleButton(interaction) {
   const id = interaction.customId;
-  if (!id.startsWith('eco_') && !id.startsWith('buy_')) return;
+  if (!['eco_', 'buy_', 'bj_', 'biz_'].some((prefix) => id.startsWith(prefix))) return;
 
   const acc = getUserAccount(interaction.user.id);
   const now = Date.now();
 
+  if (id.startsWith('bj_')) return handleBlackjackButton(interaction);
+  if (id.startsWith('biz_')) return buyBusiness(interaction, acc, id.slice(4), now);
   if (id.startsWith('buy_')) return buyItem(interaction, acc, id.slice(4));
 
   if (id.startsWith('eco_cat_')) {
@@ -416,7 +484,7 @@ const COMMANDS = {
   },
 
   async depositar(interaction, acc) {
-    const valor = interaction.options.getInteger('valor');
+    const valor = resolveAmount(interaction, acc.wallet);
     if (valor <= 0 || valor > acc.wallet) return interaction.reply(eph('❌ Valor inválido.'));
     acc.wallet -= valor;
     acc.bank = Math.min(MAX_BALANCE, acc.bank + valor);
@@ -426,7 +494,7 @@ const COMMANDS = {
   },
 
   async sacar(interaction, acc) {
-    const valor = interaction.options.getInteger('valor');
+    const valor = resolveAmount(interaction, acc.bank);
     if (valor <= 0 || valor > acc.bank) return interaction.reply(eph('❌ Valor inválido.'));
     acc.bank -= valor;
     credit(acc, valor);
@@ -437,7 +505,7 @@ const COMMANDS = {
 
   async transferir(interaction, acc) {
     const alvo = interaction.options.getUser('usuario');
-    const valor = interaction.options.getInteger('valor');
+    const valor = resolveAmount(interaction, acc.wallet);
     if (alvo.id === interaction.user.id) return interaction.reply(eph('❌ Não podes transferir para ti próprio.'));
     if (alvo.bot) return interaction.reply(eph('❌ Não podes transferir dinheiro para um bot.'));
     if (valor <= 0 || valor > acc.wallet) return interaction.reply(eph('❌ Saldo insuficiente na carteira.'));
@@ -458,6 +526,7 @@ const COMMANDS = {
       .addFields(
         { name: '📈 Nível', value: `Nível ${acc.jobLevel}`, inline: true },
         { name: '💎 Património', value: fmt(netWorth(acc)), inline: true },
+        { name: '💼 Profissão', value: `${(PROFESSIONS[acc.profession] || PROFESSIONS.entregador).emoji} ${(PROFESSIONS[acc.profession] || PROFESSIONS.entregador).nome}`, inline: true },
         { name: '🎒 Inventário & Bens', value: truncate(inventoryText(acc), 1024), inline: false }
       );
     if (acc.debt > 0) embed.addFields({ name: '📉 Dívida', value: fmt(acc.debt), inline: true });
@@ -506,7 +575,8 @@ const COMMANDS = {
     const rest = Math.max(0, acc.lastWork + ECONOMY.workCooldown - now);
     if (rest > 0) return interaction.reply(eph(`⏳ Descansa um pouco. ${waitMsg(rest)}`));
     acc.lastWork = now;
-    const ganho = Math.floor(randInt(ECONOMY.workMin, ECONOMY.workMax) * incomeMultiplier(acc));
+    const prof = PROFESSIONS[acc.profession] || PROFESSIONS.entregador;
+    const ganho = Math.floor(randInt(ECONOMY.workMin, ECONOMY.workMax) * incomeMultiplier(acc) * prof.mult);
     credit(acc, ganho);
     let extra = '';
     if (Math.random() < ECONOMY.levelUpChance) {
@@ -515,7 +585,7 @@ const COMMANDS = {
     }
     addExtrato(acc, `Trabalhou e ganhou ${fmt(ganho)}`);
     saveEcoData();
-    return interaction.reply(`💼 Trabalhaste afincadamente e ganhaste **${fmt(ganho)}**!${extra}`);
+    return interaction.reply(`${prof.emoji} Trabalhaste como **${prof.nome}** e ganhaste **${fmt(ganho)}**!${extra}`);
   },
 
   async roubar(interaction, acc, now) {
@@ -573,7 +643,7 @@ const COMMANDS = {
   },
 
   async apostar(interaction, acc) {
-    const valor = interaction.options.getInteger('valor');
+    const valor = resolveAmount(interaction, acc.wallet);
     if (valor <= 0 || valor > acc.wallet) return interaction.reply(eph('❌ Saldo insuficiente na carteira.'));
     if (Math.random() < ECONOMY.gamble.winChance + luck(acc)) {
       credit(acc, valor);
@@ -587,7 +657,7 @@ const COMMANDS = {
 
   async coinflip(interaction, acc) {
     const escolha = interaction.options.getString('escolha');
-    const valor = interaction.options.getInteger('valor');
+    const valor = resolveAmount(interaction, acc.wallet);
     if (valor <= 0 || valor > acc.wallet) return interaction.reply(eph('❌ Saldo insuficiente na carteira.'));
     const ganhou = Math.random() < ECONOMY.gamble.coinflipChance + luck(acc);
     const resultado = ganhou ? escolha : (escolha === 'cara' ? 'coroa' : 'cara');
@@ -597,7 +667,7 @@ const COMMANDS = {
   },
 
   async slots(interaction, acc) {
-    const valor = interaction.options.getInteger('valor');
+    const valor = resolveAmount(interaction, acc.wallet);
     if (valor <= 0 || valor > acc.wallet) return interaction.reply(eph('❌ Saldo insuficiente na carteira.'));
     const rolos = [0, 1, 2].map(() => SLOT_SYMBOLS[randInt(0, SLOT_SYMBOLS.length - 1)]);
     const linha = `🎰 | ${rolos.map((r) => r.emoji).join(' | ')} |`;
@@ -620,7 +690,7 @@ const COMMANDS = {
 
   async roleta(interaction, acc) {
     const cor = interaction.options.getString('cor');
-    const valor = interaction.options.getInteger('valor');
+    const valor = resolveAmount(interaction, acc.wallet);
     if (valor <= 0 || valor > acc.wallet) return interaction.reply(eph('❌ Saldo insuficiente na carteira.'));
     const numero = randInt(0, 36);
     const saiu = numero === 0 ? 'verde' : RED_NUMBERS.has(numero) ? 'vermelho' : 'preto';
@@ -665,7 +735,7 @@ const COMMANDS = {
   },
 
   async pagar(interaction, acc) {
-    const valor = interaction.options.getInteger('valor');
+    const valor = resolveAmount(interaction, acc.debt);
     if (acc.debt <= 0) return interaction.reply(eph('✅ Não tens nenhuma dívida!'));
     const pagamento = Math.min(valor, acc.debt);
     if (acc.wallet < pagamento) return interaction.reply(eph(`❌ Precisas de **${fmt(pagamento)}** na carteira para pagar isto.`));
@@ -691,6 +761,244 @@ const COMMANDS = {
     return interaction.reply('🎟️ Compraste o bilhete de loteria, mas infelizmente não foi desta vez que saíste premiado.');
   }
 };
+
+/* ============================================================
+ *  NOVIDADES: vender, cooldowns, profissão, negócios, caixa e blackjack
+ * ============================================================ */
+const blackjackGames = new Map(); // userId -> jogo em andamento
+const BJ_TIMEOUT = 60 * 1000;
+
+const cardLabel = (c) => (c === 1 ? 'A' : c > 10 ? ['J', 'Q', 'K'][c - 11] : String(c));
+const drawCard = () => randInt(1, 13);
+const showHand = (hand) => hand.map((c) => `\`${cardLabel(c)}\``).join(' ');
+
+function handValue(hand) {
+  let total = 0;
+  let aces = 0;
+  for (const c of hand) {
+    if (c === 1) { aces++; total += 11; } else total += Math.min(c, 10);
+  }
+  while (total > 21 && aces > 0) { total -= 10; aces--; }
+  return total;
+}
+
+function bjEmbed(game, { reveal = false, resultado = null, color = 0x2C3E50 } = {}) {
+  const dealer = reveal ? `${showHand(game.dealer)} (${handValue(game.dealer)})` : `${showHand([game.dealer[0]])} \`?\``;
+  const embed = new EmbedBuilder().setColor(color).setTitle('🃏 Blackjack').addFields(
+    { name: `Tua mão (${handValue(game.player)})`, value: showHand(game.player), inline: true },
+    { name: 'Dealer', value: dealer, inline: true },
+    { name: 'Aposta', value: fmt(game.bet), inline: true }
+  );
+  if (resultado) embed.setDescription(resultado);
+  return embed;
+}
+
+const bjButtons = () => new ActionRowBuilder().addComponents(
+  new ButtonBuilder().setCustomId('bj_hit').setLabel('🃏 Pedir carta').setStyle(ButtonStyle.Primary),
+  new ButtonBuilder().setCustomId('bj_stand').setLabel('✋ Parar').setStyle(ButtonStyle.Success)
+);
+
+/** Encerra o jogo, paga o prémio e devolve o texto/cor do resultado. */
+function bjFinish(userId, game, outcome) {
+  clearTimeout(game.timer);
+  blackjackGames.delete(userId);
+  const acc = getUserAccount(userId);
+  const bet = game.bet;
+  const resultados = {
+    blackjack: { pay: bet + Math.floor(bet * 1.5), texto: `🎉 **BLACKJACK!** Ganhaste **${fmt(Math.floor(bet * 1.5))}**!`, color: 0xF1C40F },
+    win: { pay: bet * 2, texto: `🎉 Ganhaste **${fmt(bet)}**!`, color: 0x2ECC71 },
+    push: { pay: bet, texto: '🤝 Empate! A tua aposta foi devolvida.', color: 0x95A5A6 },
+    lose: { pay: 0, texto: `💸 Perdeste **${fmt(bet)}**.`, color: 0xE74C3C },
+    bust: { pay: 0, texto: `💥 Estouraste! Perdeste **${fmt(bet)}**.`, color: 0xE74C3C },
+    timeout: { pay: 0, texto: `⌛ Tempo esgotado! Perdeste **${fmt(bet)}**.`, color: 0x7F8C8D }
+  };
+  const r = resultados[outcome];
+  if (r.pay > 0) credit(acc, r.pay);
+  addExtrato(acc, `Blackjack (${outcome}): ${r.pay - bet >= 0 ? '+' : '-'}${fmt(Math.abs(r.pay - bet))}`);
+  saveEcoData();
+  return r;
+}
+
+function bjStartTimer(userId, game) {
+  game.timer = setTimeout(() => {
+    if (blackjackGames.get(userId) !== game) return;
+    const r = bjFinish(userId, game, 'timeout');
+    game.message?.edit({ embeds: [bjEmbed(game, { reveal: true, resultado: r.texto, color: r.color })], components: [] }).catch(() => {});
+  }, BJ_TIMEOUT);
+}
+
+async function handleBlackjackButton(interaction) {
+  const userId = interaction.user.id;
+  const game = blackjackGames.get(userId);
+  if (!game || (game.message && game.message.id !== interaction.message.id)) {
+    return interaction.reply(eph('❌ Este jogo não é teu ou já terminou.'));
+  }
+  clearTimeout(game.timer);
+
+  if (interaction.customId === 'bj_hit') {
+    game.player.push(drawCard());
+    const valor = handValue(game.player);
+    if (valor > 21) {
+      const r = bjFinish(userId, game, 'bust');
+      return interaction.update({ embeds: [bjEmbed(game, { reveal: true, resultado: r.texto, color: r.color })], components: [] });
+    }
+    if (valor < 21) {
+      bjStartTimer(userId, game);
+      return interaction.update({ embeds: [bjEmbed(game)], components: [bjButtons()] });
+    }
+    // 21 exato: para automaticamente
+  }
+
+  while (handValue(game.dealer) < 17) game.dealer.push(drawCard());
+  const p = handValue(game.player);
+  const d = handValue(game.dealer);
+  const outcome = d > 21 || p > d ? 'win' : p === d ? 'push' : 'lose';
+  const r = bjFinish(userId, game, outcome);
+  return interaction.update({ embeds: [bjEmbed(game, { reveal: true, resultado: r.texto, color: r.color })], components: [] });
+}
+
+async function buyBusiness(interaction, acc, id, now) {
+  const b = BUSINESSES[id];
+  if (!b) return interaction.reply(eph('❌ Este menu expirou. Usa `/negocios` novamente.'));
+  const tem = acc.businesses[id] || 0;
+  if (tem >= ECONOMY.business.max) return interaction.reply(eph(`❌ Já tens o máximo de **${ECONOMY.business.max}** ${b.nome}.`));
+  if (acc.wallet < b.preco) return interaction.reply(eph(`❌ Precisas de **${fmt(b.preco)}** na carteira (tens ${fmt(acc.wallet)}).`));
+
+  const pendente = pendingBusiness(acc, now); // liquida o que já tinha acumulado antes de mudar a renda
+  if (pendente > 0) credit(acc, pendente);
+  acc.wallet -= b.preco;
+  acc.businesses[id] = tem + 1;
+  acc.lastCollect = now;
+  addExtrato(acc, `Comprou ${b.nome} por ${fmt(b.preco)}`);
+  saveEcoData();
+  return interaction.reply(eph(`✅ Compraste **${b.nome}** ${b.emoji} por **${fmt(b.preco)}**!${pendente > 0 ? `\n💰 Também coletei ${fmt(pendente)} que já tinhas acumulado.` : ''}`));
+}
+
+async function handleAutocomplete(interaction) {
+  if (interaction.commandName !== 'vender') return;
+  const acc = getUserAccount(interaction.user.id);
+  const foco = normalize(interaction.options.getFocused());
+  const itens = [...new Set(acc.inventory)]
+    .map((nome) => ITEM_LIST.find((i) => i.nome === nome))
+    .filter((i) => i && !i.vip && normalize(i.nome).includes(foco))
+    .slice(0, 25);
+  await interaction.respond(itens.map((i) => ({ name: truncate(`${i.nome} — ${fmt(i.preco * ECONOMY.sellRate)}`, 100), value: i.nome })));
+}
+
+Object.assign(COMMANDS, {
+  async vender(interaction, acc) {
+    const nome = interaction.options.getString('item');
+    const item = ITEM_LIST.find((i) => normalize(i.nome) === normalize(nome || ''));
+    if (!item || !has(acc, item.nome)) return interaction.reply(eph('❌ Não tens esse item. Vê o teu `/inventario`.'));
+    if (item.vip) return interaction.reply(eph('❌ Cargos VIP não podem ser vendidos.'));
+
+    const valor = Math.floor(item.preco * ECONOMY.sellRate);
+    acc.inventory.splice(acc.inventory.indexOf(item.nome), 1);
+    credit(acc, valor);
+    addExtrato(acc, `Vendeu ${item.nome} por ${fmt(valor)}`);
+    saveEcoData();
+    return interaction.reply(`💰 Vendeste **${item.nome}** por **${fmt(valor)}** (${Math.round(ECONOMY.sellRate * 100)}% do valor).`);
+  },
+
+  async cooldowns(interaction, acc, now) {
+    const linha = (nome, ate) => (ate <= now ? `✅ **${nome}** — pronto` : `⏳ **${nome}** — <t:${unix(ate)}:R>`);
+    const linhas = [
+      linha('/daily', acc.lastDaily + DAY),
+      linha('/weekly', acc.lastWeekly + 7 * DAY),
+      linha('/trabalhar', acc.lastWork + ECONOMY.workCooldown),
+      ...Object.entries(ACTIVITIES).map(([nome, a]) => linha(`/${nome}`, (acc.cooldowns[nome] || 0) + a.cooldown)),
+      linha('/crime', (acc.cooldowns.crime || 0) + ECONOMY.crime.cooldown),
+      linha('/roubar', (acc.cooldowns.roubar || 0) + ECONOMY.rob.cooldown)
+    ];
+    if (businessRate(acc) > 0) linhas.push(`🏭 **/coletar** — ${fmt(pendingBusiness(acc, now))} acumulados`);
+    const embed = new EmbedBuilder().setColor(0x3498DB).setTitle('⏱️ Os teus cooldowns').setDescription(linhas.join('\n'));
+    return interaction.reply({ embeds: [embed], flags: EPHEMERAL });
+  },
+
+  async profissao(interaction, acc) {
+    const escolha = interaction.options.getString('escolha');
+    if (!escolha) {
+      const lista = Object.entries(PROFESSIONS)
+        .map(([id, p]) => `${p.emoji} **${p.nome}** — nível ${p.nivel}+ — ganhos ×${p.mult}${acc.profession === id ? ' ✅ (atual)' : ''}`)
+        .join('\n');
+      const embed = new EmbedBuilder().setColor(0x9B59B6).setTitle('💼 Profissões')
+        .setDescription(`${lista}\n\nO teu nível de trabalho: **${acc.jobLevel}** (sobe com \`/trabalhar\`).\nEscolhe com \`/profissao escolha:...\``);
+      return interaction.reply({ embeds: [embed], flags: EPHEMERAL });
+    }
+    const prof = PROFESSIONS[escolha];
+    if (!prof) return interaction.reply(eph('❌ Profissão inválida.'));
+    if (acc.jobLevel < prof.nivel) return interaction.reply(eph(`❌ Precisas do nível **${prof.nivel}** de trabalho (tens ${acc.jobLevel}). Sobe com \`/trabalhar\`.`));
+    acc.profession = escolha;
+    saveEcoData();
+    return interaction.reply(`${prof.emoji} Agora és **${prof.nome}**! Os teus ganhos no \`/trabalhar\` são ×${prof.mult}.`);
+  },
+
+  async negocios(interaction, acc, now) {
+    const linhas = Object.entries(BUSINESSES)
+      .map(([id, b]) => `${b.emoji} **${b.nome}** — ${fmt(b.preco)} • rende ${fmt(b.renda)}/h • tens **${acc.businesses[id] || 0}/${ECONOMY.business.max}**`)
+      .join('\n');
+    const embed = new EmbedBuilder().setColor(0xE67E22).setTitle('🏢 Negócios')
+      .setDescription(`${linhas}\n\nO rendimento acumula até **${ECONOMY.business.capHours}h**. Coleta com \`/coletar\`.`)
+      .addFields(
+        { name: '📈 Renda por hora', value: fmt(businessRate(acc)), inline: true },
+        { name: '💰 Acumulado agora', value: fmt(pendingBusiness(acc, now)), inline: true }
+      );
+    const row = new ActionRowBuilder().addComponents(
+      Object.entries(BUSINESSES).map(([id, b]) => new ButtonBuilder().setCustomId(`biz_${id}`).setLabel(`${b.emoji} ${b.nome}`).setStyle(ButtonStyle.Success))
+    );
+    return interaction.reply({ embeds: [embed], components: [row], flags: EPHEMERAL });
+  },
+
+  async coletar(interaction, acc, now) {
+    if (businessRate(acc) <= 0) return interaction.reply(eph('❌ Não tens nenhum negócio. Compra um em `/negocios`.'));
+    const valor = pendingBusiness(acc, now);
+    if (valor < 1) return interaction.reply(eph('⏳ Os teus negócios ainda não produziram nada. Volta daqui a pouco.'));
+    credit(acc, valor);
+    acc.lastCollect = now;
+    addExtrato(acc, `Coletou ${fmt(valor)} dos negócios`);
+    saveEcoData();
+    return interaction.reply(`🏭 Coletaste **${fmt(valor)}** dos teus negócios!`);
+  },
+
+  async caixa(interaction, acc) {
+    const preco = ECONOMY.caixa.price;
+    if (acc.wallet < preco) return interaction.reply(eph(`❌ Uma caixa misteriosa custa ${fmt(preco)}.`));
+    acc.wallet -= preco;
+
+    let roll = Math.random();
+    let premio = CAIXA_PRIZES[0];
+    for (const p of CAIXA_PRIZES) {
+      if (roll < p.chance) { premio = p; break; }
+      roll -= p.chance;
+    }
+    const valor = randInt(premio.min, premio.max);
+    credit(acc, valor);
+    addExtrato(acc, `Abriu uma caixa misteriosa: ${fmt(valor)}`);
+    saveEcoData();
+    return interaction.reply(`📦 Abriste uma caixa misteriosa e encontraste **${fmt(valor)}**! ${premio.texto}`);
+  },
+
+  async blackjack(interaction, acc) {
+    const userId = interaction.user.id;
+    if (blackjackGames.has(userId)) return interaction.reply(eph('❌ Já tens um jogo de blackjack em andamento.'));
+    const valor = resolveAmount(interaction, acc.wallet);
+    if (!valor || valor <= 0 || valor > acc.wallet) return interaction.reply(eph('❌ Saldo insuficiente na carteira.'));
+
+    acc.wallet -= valor;
+    saveEcoData();
+    const game = { bet: valor, player: [drawCard(), drawCard()], dealer: [drawCard(), drawCard()], message: null, timer: null };
+
+    if (handValue(game.player) === 21) {
+      const r = bjFinish(userId, game, handValue(game.dealer) === 21 ? 'push' : 'blackjack');
+      return interaction.reply({ embeds: [bjEmbed(game, { reveal: true, resultado: r.texto, color: r.color })] });
+    }
+
+    blackjackGames.set(userId, game);
+    await interaction.reply({ embeds: [bjEmbed(game)], components: [bjButtons()] });
+    game.message = await interaction.fetchReply().catch(() => null);
+    bjStartTimer(userId, game);
+  }
+});
 
 COMMANDS['painel-economia'] = COMMANDS.mercado;
 COMMANDS.loja = COMMANDS.mercado;
@@ -741,6 +1049,7 @@ async function handleCommand(interaction) {
 
 async function handleEconomyInteraction(interaction) {
   try {
+    if (interaction.isAutocomplete()) return await handleAutocomplete(interaction);
     if (interaction.isButton()) return await handleButton(interaction);
     if (interaction.isChatInputCommand()) return await handleCommand(interaction);
   } catch (err) {
@@ -749,4 +1058,4 @@ async function handleEconomyInteraction(interaction) {
   }
 }
 
-module.exports = { economySlashCommands, handledCommands, handleEconomyInteraction, startEconomyScheduler };
+module.exports = { economySlashCommands, handledCommands, handleEconomyInteraction, startEconomyScheduler, giveMoney };

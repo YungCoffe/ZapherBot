@@ -4,6 +4,13 @@ const { MessageFlags } = require('discord.js');
 
 const EPHEMERAL = MessageFlags.Ephemeral;
 
+/** Prefixo dos comandos de texto (mude com a variável de ambiente PREFIX). */
+const PREFIX = process.env.PREFIX || '?';
+
+/** Valores especiais que só o prefixo gera: "tudo" e "metade" em comandos de dinheiro. */
+const ALL_AMOUNT = -1;
+const HALF_AMOUNT = -2;
+
 /** Resposta efêmera simples. */
 const eph = (content) => ({ content, flags: EPHEMERAL });
 
@@ -34,4 +41,4 @@ async function respond(interaction, payload) {
   return interaction.reply(payload);
 }
 
-module.exports = { EPHEMERAL, eph, truncate, normalize, fmtDate, fmtDateTime, unix, randInt, respond };
+module.exports = { EPHEMERAL, PREFIX, ALL_AMOUNT, HALF_AMOUNT, eph, truncate, normalize, fmtDate, fmtDateTime, unix, randInt, respond };

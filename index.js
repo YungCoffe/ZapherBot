@@ -14,14 +14,28 @@ const {
   handleGuildMemberUpdate,
   startScheduler
 } = require('./ticket.js');
-
 const {
   economySlashCommands,
   handledCommands: economyHandled,
   handleEconomyInteraction,
   startEconomyScheduler
 } = require('./economy.js');
+const {
+  funSlashCommands,
+  handledCommands: funHandled,
+  handleFunInteraction,
+  handleXp,
+  startFunScheduler
+} = require('./fun.js');
+const {
+  aiSlashCommands,
+  handledCommands: aiHandled,
+  handleAiInteraction,
+  handleAiMention
+} = require('./ai.js');
+const { createPrefixHandler } = require('./hybrid.js');
 const { flushAll } = require('./storage.js');
+const { PREFIX } = require('./utils.js');
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const PORT = process.env.PORT || 10000;
@@ -43,6 +57,21 @@ const client = new Client({
 });
 
 /* ------------------------------------------------------------
+ *  Comandos: cada um funciona como /slash E com prefixo
+ * ------------------------------------------------------------ */
+const allBuilders = [...allSlashCommands, ...economySlashCommands, ...funSlashCommands, ...aiSlashCommands];
+
+/** Cada módulo ignora o que não é dele e trata os próprios erros. */
+async function dispatch(interaction) {
+  await handleInteraction(interaction);
+  await handleEconomyInteraction(interaction);
+  await handleFunInteraction(interaction);
+  await handleAiInteraction(interaction);
+}
+
+const handlePrefix = createPrefixHandler({ builders: allBuilders, dispatch });
+
+/* ------------------------------------------------------------
  *  Servidor HTTP de uptime (o Render exige uma porta aberta)
  *  Sobe ANTES do login para o deploy ser considerado saudável.
  * ------------------------------------------------------------ */
@@ -61,39 +90,43 @@ http.createServer((req, res) => {
  * ------------------------------------------------------------ */
 client.once(Events.ClientReady, async (c) => {
   console.log(`✅ Bot online como ${c.user.tag}`);
-  c.user.setPresence({ activities: [{ name: '/help | ?help', type: ActivityType.Playing }], status: 'online' });
+  c.user.setPresence({ activities: [{ name: `/help | ${PREFIX}help`, type: ActivityType.Playing }], status: 'online' });
 
   try {
-    const totalCommands = [...allSlashCommands, ...economySlashCommands];
-
-    const nomes = totalCommands.map((cmd) => cmd.name);
+    const nomes = allBuilders.map((cmd) => cmd.name);
     const duplicados = nomes.filter((n, i) => nomes.indexOf(n) !== i);
     if (duplicados.length) console.warn('⚠️ Comandos duplicados:', [...new Set(duplicados)].join(', '));
     if (nomes.length > 100) console.warn(`⚠️ ${nomes.length} comandos registrados (o limite do Discord é 100).`);
 
-    const tratados = new Set([...ticketHandled, ...economyHandled]);
+    const tratados = new Set([...ticketHandled, ...economyHandled, ...funHandled, ...aiHandled]);
     const semHandler = nomes.filter((n) => !tratados.has(n));
     if (semHandler.length) console.warn('⚠️ Comandos registrados sem handler:', semHandler.join(', '));
 
-    await c.application.commands.set(totalCommands.map((cmd) => cmd.toJSON()));
-    console.log(`✅ ${nomes.length} comandos Slash (Moderação, Tickets e Economia) registrados com sucesso!`);
+    await c.application.commands.set(allBuilders.map((cmd) => cmd.toJSON()));
+    console.log(`✅ ${nomes.length} comandos registrados (slash + prefixo "${PREFIX}")!`);
   } catch (error) {
     console.error('❌ Erro ao registrar comandos:', error);
   }
 
   startScheduler(c);
   startEconomyScheduler(c);
+  startFunScheduler(c);
 });
 
-client.on(Events.MessageCreate, handleMessage);
+client.on(Events.MessageCreate, async (message) => {
+  try {
+    if (await handleMessage(message)) return;     // calado / censura / automod
+    if (await handlePrefix(message)) return;      // comandos com prefixo
+    if (await handleAiMention(message)) return;   // @Bot pergunta...
+    await handleXp(message);                      // XP de nível
+  } catch (err) {
+    console.error('[messageCreate]', err);
+  }
+});
+
 client.on(Events.MessageDelete, handleMessageDelete);
 client.on(Events.MessageBulkDelete, handleMessageDeleteBulk);
-
-client.on(Events.InteractionCreate, async (interaction) => {
-  // Cada handler ignora o que não é dele e trata os próprios erros
-  await handleInteraction(interaction);
-  await handleEconomyInteraction(interaction);
-});
+client.on(Events.InteractionCreate, dispatch);
 
 client.on(Events.GuildMemberAdd, handleGuildMemberAdd);
 client.on(Events.GuildMemberRemove, handleGuildMemberRemove);
