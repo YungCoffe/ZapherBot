@@ -5,7 +5,7 @@
  * Funciona assim:  /perguntar ...   ?perguntar ...   ou marcando o bot: @Bot sua pergunta
  *
  * Variáveis de ambiente (Render > Environment):
- *   ANTHROPIC_API_KEY      (obrigatória) chave criada em console.anthropic.com
+ *   chave                  (obrigatória) chave criada em console.anthropic.com
  *   ANTHROPIC_MODEL        (opcional)    padrão: claude-haiku-5-5 (rápido e barato)
  *   AI_COOLDOWN_SECONDS    (opcional)    espera entre perguntas de cada pessoa (padrão 8)
  *   AI_DAILY_LIMIT         (opcional)    perguntas por pessoa por dia (padrão 40)
@@ -46,10 +46,10 @@ function checkLimits(userId) {
   if (espera > 0) return { erro: `⏳ Calma! Espera mais ${Math.ceil(espera / 1000)}s antes de perguntar de novo.` };
 
   const hoje = today();
-  if (globalUse.dia === hoje && globalUse.count >= GLOBAL_DAILY_LIMIT) return { erro: '🚫 A IA atingiu o limite de perguntas de hoje (somando todos os servidores). Volte amanhã!' };
+  if (globalUse.dia === hoje && globalUse.count >= GLOBAL_DAILY_LIMIT) return { erro: '🚫 A IA atingiu o limite de perguntas de hoje (somando todos os servidores). Volte ammanhã!' };
   const d = dailyUse.get(userId);
   const usadas = d && d.dia === hoje ? d.count : 0;
-  if (usadas >= DAILY_LIMIT) return { erro: `🚫 Você atingiu o limite de ${DAILY_LIMIT} perguntas por dia. Volte amanhã!` };
+  if (usadas >= DAILY_LIMIT) return { erro: `🚫 Você atingiu o limite de ${DAILY_LIMIT} perguntas por dia. Volte ammanhã!` };
   return { hoje, usadas };
 }
 
@@ -116,7 +116,7 @@ const aiSlashCommands = [
 
 const COMMANDS = {
   async perguntar(interaction) {
-    if (!API_KEY) return interaction.reply(eph('🤖 A IA ainda não está configurada (falta a variável `ANTHROPIC_API_KEY` no Render).'));
+    if (!API_KEY) return interaction.reply(eph('🤖 A IA ainda não está configurada (falta a variável `chave` no Render).'));
     if (interaction.guild && getGuildConfig(interaction.guild.id).aiEnabled === false) {
       return interaction.reply(eph('🤖 A IA está desligada neste servidor.'));
     }
