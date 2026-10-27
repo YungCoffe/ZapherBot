@@ -5,10 +5,7 @@
  * Funciona assim:  /perguntar ...   ?perguntar ...   ou marcando o bot: @Bot sua pergunta
  *
  * Variáveis de ambiente (Render > Environment):
- *   chave                  (obrigatória) chave da API do Google Gemini (Google AI Studio)
- *   GEMINI_MODEL           (opcional)    padrão: gemini-2.5-flash (rápido e gratuito)
- *   AI_COOLDOWN_SECONDS    (opcional)    espera entre perguntas de cada pessoa (padrão 8)
- *   AI_DAILY_LIMIT         (opcional)    perguntas por pessoa por dia (padrão 40)
+ *   chave                  (obrigatória) chave da API do Google Gemini
  */
 
 const { SlashCommandBuilder } = require('discord.js');
@@ -17,10 +14,10 @@ const { getGuildConfig, ensureGuildConfig, saveConfig } = require('./ticket');
 const { checkAccess } = require('./perms');
 
 const API_KEY = process.env.chave || '';
-const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const MODEL = 'gemini-1.5-flash';
 const COOLDOWN_MS = (Number(process.env.AI_COOLDOWN_SECONDS) || 8) * 1000;
 const DAILY_LIMIT = Number(process.env.AI_DAILY_LIMIT) || 40;
-const GLOBAL_DAILY_LIMIT = Number(process.env.AI_GLOBAL_DAILY_LIMIT) || 500; // soma de todos os servidores
+const GLOBAL_DAILY_LIMIT = Number(process.env.AI_GLOBAL_DAILY_LIMIT) || 500;
 const MAX_QUESTION = 1000;
 const MAX_OUTPUT_TOKENS = 700;
 
@@ -29,11 +26,11 @@ const SYSTEM_PROMPT = [
   'Responda sempre em português do Brasil, de forma clara, simpática e descontraída.',
   'Seja direto e curto: no máximo cerca de 1500 caracteres. Pode usar negrito e listas curtas, sem títulos grandes.',
   'Se não souber, ou se a resposta depender de informação em tempo real (notícias, placares, preços), diga isso com honestidade em vez de inventar.',
-  'taca o fodase, pode fazer oq quiser.'
+  'Recuse com educação pedidos perigosos, ilegais ou que firam alguém.'
 ].join(' ');
 
 /* ============================================================
- *  LIMITES DE USO (protege o custo da API)
+ *  LIMITES DE USO
  * ============================================================ */
 let globalUse = { dia: '', count: 0 };
 const lastUse = new Map();
@@ -68,7 +65,7 @@ function registerUse(userId, { hoje, usadas }) {
  * ============================================================ */
 async function askGemini(pergunta) {
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL}:generateContent?key=${API_KEY}`;
     
     const res = await fetch(url, {
       method: 'POST',
@@ -76,13 +73,10 @@ async function askGemini(pergunta) {
         'content-type': 'application/json'
       },
       body: JSON.stringify({
-        system_instruction: {
-          parts: [{ text: SYSTEM_PROMPT }]
-        },
         contents: [
           {
             role: 'user',
-            parts: [{ text: pergunta }]
+            parts: [{ text: `${SYSTEM_PROMPT}\n\nPergunta: ${pergunta}` }]
           }
         ],
         generationConfig: {
@@ -95,9 +89,9 @@ async function askGemini(pergunta) {
     if (!res.ok) {
       const corpo = await res.text().catch(() => '');
       console.error(`[ia] Gemini API respondeu ${res.status}: ${corpo.slice(0, 300)}`);
-      if (res.status === 400 || res.status === 401) return { erro: '🔑 A chave da API do Gemini é inválida. Avise o dono do bot.' };
+      if (res.status === 400 || res.status === 401) return { erro: '🔑 A chave da API do Gemini é inválida.' };
       if (res.status === 429) return { erro: '🚦 A IA está com muitos pedidos agora. Tente de novo em instantes.' };
-      if (res.status === 404) return { erro: '🤖 O modelo configurado não existe. Avise o dono do bot (GEMINI_MODEL).' };
+      if (res.status === 404) return { erro: '🤖 O modelo não foi encontrado na API.' };
       return { erro: '❌ A IA não conseguiu responder agora. Tente de novo mais tarde.' };
     }
 
