@@ -16,7 +16,7 @@ const { eph, truncate, respond, describeError } = require('./utils');
 const { getGuildConfig, ensureGuildConfig, saveConfig } = require('./ticket');
 const { checkAccess } = require('./perms');
 
-const API_KEY = process.env.ANTHROPIC_API_KEY || '';
+const API_KEY = process.env.chave || '';
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-5-5';
 const COOLDOWN_MS = (Number(process.env.AI_COOLDOWN_SECONDS) || 8) * 1000;
 const DAILY_LIMIT = Number(process.env.AI_DAILY_LIMIT) || 40;
