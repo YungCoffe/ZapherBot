@@ -12,13 +12,15 @@
  */
 
 const { SlashCommandBuilder } = require('discord.js');
-const { eph, truncate, respond } = require('./utils');
-const { hasAdminPermission, getGuildConfig, ensureGuildConfig, saveConfig } = require('./ticket');
+const { eph, truncate, respond, describeError } = require('./utils');
+const { getGuildConfig, ensureGuildConfig, saveConfig } = require('./ticket');
+const { checkAccess } = require('./perms');
 
 const API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-5-5';
 const COOLDOWN_MS = (Number(process.env.AI_COOLDOWN_SECONDS) || 8) * 1000;
 const DAILY_LIMIT = Number(process.env.AI_DAILY_LIMIT) || 40;
+const GLOBAL_DAILY_LIMIT = Number(process.env.AI_GLOBAL_DAILY_LIMIT) || 500; // soma de todos os servidores
 const MAX_QUESTION = 1000;
 const MAX_OUTPUT_TOKENS = 700;
 
@@ -33,6 +35,7 @@ const SYSTEM_PROMPT = [
 /* ============================================================
  *  LIMITES DE USO (protege o custo da API)
  * ============================================================ */
+let globalUse = { dia: '', count: 0 };
 const lastUse = new Map();
 const dailyUse = new Map();
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
@@ -43,6 +46,7 @@ function checkLimits(userId) {
   if (espera > 0) return { erro: `⏳ Calma! Espera mais ${Math.ceil(espera / 1000)}s antes de perguntar de novo.` };
 
   const hoje = today();
+  if (globalUse.dia === hoje && globalUse.count >= GLOBAL_DAILY_LIMIT) return { erro: '🚫 A IA atingiu o limite de perguntas de hoje (somando todos os servidores). Volte amanhã!' };
   const d = dailyUse.get(userId);
   const usadas = d && d.dia === hoje ? d.count : 0;
   if (usadas >= DAILY_LIMIT) return { erro: `🚫 Você atingiu o limite de ${DAILY_LIMIT} perguntas por dia. Volte amanhã!` };
@@ -52,6 +56,7 @@ function checkLimits(userId) {
 function registerUse(userId, { hoje, usadas }) {
   lastUse.set(userId, Date.now());
   dailyUse.set(userId, { dia: hoje, count: usadas + 1 });
+  globalUse = { dia: hoje, count: (globalUse.dia === hoje ? globalUse.count : 0) + 1 };
   if (lastUse.size > 1000) {
     const limite = Date.now() - COOLDOWN_MS;
     for (const [id, t] of lastUse) if (t < limite) lastUse.delete(id);
@@ -129,8 +134,8 @@ const COMMANDS = {
 
   async ia(interaction) {
     if (!interaction.guild) return interaction.reply(eph('❌ Este comando só funciona dentro de um servidor.'));
-    const cfg = getGuildConfig(interaction.guild.id);
-    if (!hasAdminPermission(interaction.member, cfg)) return interaction.reply(eph('❌ Sem permissão.'));
+    const negado = checkAccess(interaction, { strict: true });
+    if (negado) return interaction.reply(eph(negado));
 
     const ligada = interaction.options.getBoolean('status');
     ensureGuildConfig(interaction.guild.id).aiEnabled = ligada;
@@ -148,7 +153,7 @@ async function handleAiInteraction(interaction) {
     await COMMANDS[interaction.commandName](interaction);
   } catch (err) {
     console.error('[interação/ia]', err);
-    try { await respond(interaction, eph('❌ Ocorreu um erro inesperado ao executar isso.')); } catch (_) { /* ignora */ }
+    try { const aviso = describeError(err); if (aviso) await respond(interaction, eph(aviso)); } catch (_) { /* ignora */ }
   }
 }
 

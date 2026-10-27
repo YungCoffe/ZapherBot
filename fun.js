@@ -1,17 +1,13 @@
 'use strict';
 
-const { EmbedBuilder, SlashCommandBuilder, version: djsVersion } = require('discord.js');
+const { EmbedBuilder, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, version: djsVersion } = require('discord.js');
+const { inviteUrl } = require('./perms');
 const { JsonStore } = require('./storage');
-const { eph, truncate, unix, randInt, respond } = require('./utils');
-const { giveMoney } = require('./economy');
+const { eph, truncate, unix, randInt, respond, describeError } = require('./utils');
 
 /* ============================================================
  *  AJUSTES
  * ============================================================ */
-const XP_COOLDOWN = 60 * 1000;   // 1 mensagem por minuto conta para XP (evita spam)
-const XP_MIN = 15;
-const XP_MAX = 25;
-const LEVEL_REWARD = 5000;       // bónus em R$ por nível (nível 3 = R$ 15.000)
 const MAX_REMINDERS = 10;
 const NUM_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣'];
 
@@ -25,55 +21,8 @@ const BALL_ANSWERS = [
 /* ============================================================
  *  DADOS
  * ============================================================ */
-const levelsStore = new JsonStore('levels.json', { delay: 5000 });
 const remindersStore = new JsonStore('reminders.json');
 remindersStore.data.items ??= [];
-
-const xpLast = new Map();
-const xpNeeded = (level) => 5 * level * level + 50 * level + 100;
-const fmtMoney = (n) => `R$ ${Math.floor(n).toLocaleString('pt-BR')}`;
-
-function sortedLevels(guildId) {
-  return Object.entries(levelsStore.data[guildId] || {})
-    .map(([id, u]) => ({ id, level: u.level, xp: u.xp }))
-    .sort((a, b) => b.level - a.level || b.xp - a.xp);
-}
-
-/** Dá XP por mensagem; ao subir de nível paga um bónus na economia. */
-async function handleXp(message) {
-  try {
-    if (message.author.bot || !message.guild) return;
-    if (message.content.trim().length < 3) return;
-
-    const now = Date.now();
-    const key = `${message.guild.id}:${message.author.id}`;
-    if (now - (xpLast.get(key) || 0) < XP_COOLDOWN) return;
-    xpLast.set(key, now);
-
-    const guildData = (levelsStore.data[message.guild.id] ??= {});
-    const user = (guildData[message.author.id] ??= { xp: 0, level: 0 });
-    user.xp += randInt(XP_MIN, XP_MAX);
-
-    let subiu = false;
-    while (user.xp >= xpNeeded(user.level)) {
-      user.xp -= xpNeeded(user.level);
-      user.level += 1;
-      subiu = true;
-    }
-    levelsStore.save();
-
-    if (subiu) {
-      const bonus = user.level * LEVEL_REWARD;
-      giveMoney(message.author.id, bonus, `Bónus por subir para o nível ${user.level}`);
-      await message.channel.send({
-        content: `🎉 <@${message.author.id}> subiu para o **nível ${user.level}**! Ganhou um bónus de **${fmtMoney(bonus)}**.`,
-        allowedMentions: { users: [message.author.id] }
-      }).catch(() => {});
-    }
-  } catch (err) {
-    console.error('[xp]', err.message);
-  }
-}
 
 /* ============================================================
  *  LEMBRETES (sobrevivem a reinícios)
@@ -105,9 +54,6 @@ async function funTick(client) {
       remindersStore.save();
       for (const r of vencidos) await deliverReminder(client, r);
     }
-    for (const [key, last] of xpLast) {
-      if (now - last > XP_COOLDOWN) xpLast.delete(key);
-    }
   } catch (err) {
     console.error('[fun/agendador]', err.message);
   } finally {
@@ -136,9 +82,7 @@ const funSlashCommands = [
   new SlashCommandBuilder().setName('lembrete').setDescription('Cria um lembrete para daqui a alguns minutos')
     .addIntegerOption(o => o.setName('minutos').setDescription('Daqui a quantos minutos').setRequired(true).setMinValue(1).setMaxValue(43200))
     .addStringOption(o => o.setName('texto').setDescription('Do que te devo lembrar').setRequired(true).setMaxLength(500)),
-  new SlashCommandBuilder().setName('botinfo').setDescription('Informações e estatísticas do bot'),
-  new SlashCommandBuilder().setName('nivel').setDescription('Mostra o teu nível e XP no servidor').addUserOption(o => o.setName('usuario').setDescription('Membro').setRequired(false)),
-  new SlashCommandBuilder().setName('ranknivel').setDescription('Mostra o top 10 de níveis do servidor')
+  new SlashCommandBuilder().setName('botinfo').setDescription('Informações e estatísticas do bot')
 ];
 
 const splitOptions = (text, regex) => text.split(regex).map((s) => s.trim()).filter(Boolean);
@@ -212,39 +156,12 @@ const COMMANDS = {
         { name: '🟢 Node.js', value: process.version, inline: true },
         { name: '📦 discord.js', value: `v${djsVersion}`, inline: true }
       );
-    return interaction.reply({ embeds: [embed] });
-  },
-
-  async nivel(interaction) {
-    if (!interaction.guild) return interaction.reply(eph('❌ Este comando só funciona dentro de um servidor.'));
-    const alvo = interaction.options.getUser('usuario') || interaction.user;
-    const u = levelsStore.data[interaction.guild.id]?.[alvo.id] || { xp: 0, level: 0 };
-    const precisa = xpNeeded(u.level);
-    const cheios = Math.min(10, Math.round((u.xp / precisa) * 10));
-    const barra = '🟩'.repeat(cheios) + '⬜'.repeat(10 - cheios);
-    const posicao = sortedLevels(interaction.guild.id).findIndex((x) => x.id === alvo.id) + 1;
-
-    const embed = new EmbedBuilder()
-      .setColor(0x2ECC71)
-      .setTitle(`⭐ Nível de ${alvo.tag}`)
-      .setThumbnail(alvo.displayAvatarURL({ size: 256 }))
-      .addFields(
-        { name: '📈 Nível', value: `${u.level}`, inline: true },
-        { name: '🏅 Posição', value: posicao ? `#${posicao}` : 'Sem ranking', inline: true },
-        { name: `✨ XP (${u.xp}/${precisa})`, value: barra }
-      );
-    return interaction.reply({ embeds: [embed] });
-  },
-
-  async ranknivel(interaction) {
-    if (!interaction.guild) return interaction.reply(eph('❌ Este comando só funciona dentro de um servidor.'));
-    const top = sortedLevels(interaction.guild.id).slice(0, 10);
-    if (!top.length) return interaction.reply(eph('📊 Ninguém ganhou XP ainda. Conversem no chat!'));
-    const desc = top.map((u, i) => {
-      const med = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `**#${i + 1}**`;
-      return `${med} <@${u.id}> — Nível **${u.level}** (${u.xp} XP)`;
-    }).join('\n');
-    return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xF1C40F).setTitle('🏆 Top 10 Níveis').setDescription(desc)], allowedMentions: { parse: [] } });
+    const link = inviteUrl(c);
+    if (link) embed.setDescription('Quer o bot no seu servidor? É só clicar no botão abaixo! 👇');
+    const components = link
+      ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('Adicionar ao meu servidor').setEmoji('➕').setStyle(ButtonStyle.Link).setURL(link))]
+      : [];
+    return interaction.reply({ embeds: [embed], components });
   }
 };
 
@@ -257,8 +174,8 @@ async function handleFunInteraction(interaction) {
     await COMMANDS[interaction.commandName](interaction);
   } catch (err) {
     console.error('[interação/fun]', err);
-    try { await respond(interaction, eph('❌ Ocorreu um erro inesperado ao executar isso.')); } catch (_) { /* ignora */ }
+    try { const aviso = describeError(err); if (aviso) await respond(interaction, eph(aviso)); } catch (_) { /* ignora */ }
   }
 }
 
-module.exports = { funSlashCommands, handledCommands, handleFunInteraction, handleXp, startFunScheduler };
+module.exports = { funSlashCommands, handledCommands, handleFunInteraction, startFunScheduler };

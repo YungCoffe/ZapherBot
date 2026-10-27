@@ -8,7 +8,7 @@
 
 const { EPHEMERAL, PREFIX, ALL_AMOUNT, HALF_AMOUNT, normalize } = require('./utils');
 
-const T = { STRING: 3, INTEGER: 4, BOOLEAN: 5, USER: 6, CHANNEL: 7, ROLE: 8, NUMBER: 10 };
+const T = { STRING: 3, INTEGER: 4, BOOLEAN: 5, USER: 6, CHANNEL: 7, ROLE: 8, NUMBER: 10, ATTACHMENT: 11 };
 const PREFIX_COOLDOWN_MS = 2000;
 
 // Atalhos curtos (opcional) -> nome real do comando
@@ -21,7 +21,8 @@ const ALIASES = {
   cf: 'coinflip', bj: 'blackjack', slot: 'slots',
   lvl: 'nivel', xp: 'nivel', av: 'avatar',
   pergunta: 'perguntar', ask: 'perguntar',
-  dados: 'dado', cd: 'cooldowns', biz: 'negocios', collect: 'coletar'
+  dados: 'dado', cd: 'cooldowns', biz: 'negocios', collect: 'coletar',
+  convite: 'botinfo', invite: 'botinfo', add: 'botinfo'
 };
 
 const MULT = { k: 1e3, m: 1e6, mi: 1e6, b: 1e9 };
@@ -172,9 +173,26 @@ async function parseOne(message, options, k, tokens, i, text) {
 
 /** Converte o texto digitado nas opções do comando. */
 async function parseOptions(message, def, text) {
-  const options = def.options || [];
-  const tokens = tokenize(text);
+  const allOptions = def.options || [];
+  const options = allOptions.filter((o) => o.type !== T.ATTACHMENT);
   const values = new Map();
+
+  // Anexos: usa o arquivo enviado na própria mensagem ou, se não houver, um link (http...) no texto
+  const arquivos = [...(message.attachments?.values?.() ?? [])];
+  for (const opt of allOptions.filter((o) => o.type === T.ATTACHMENT)) {
+    let anexo = arquivos.shift();
+    if (!anexo) {
+      const t = tokenize(text).find((tk) => /^https?:\/\/\S+$/i.test(tk.value));
+      if (t) {
+        anexo = { url: t.value, name: t.value.split('/').pop().split('?')[0] || 'imagem', size: null, contentType: null };
+        text = `${text.slice(0, t.start)} ${text.slice(t.end)}`.trim();
+      }
+    }
+    if (anexo) values.set(opt.name, { attachment: anexo });
+    else if (opt.required) return { error: { kind: 'missing', opt } };
+  }
+
+  const tokens = tokenize(text);
   let i = 0;
 
   for (let k = 0; k < options.length; k++) {
@@ -213,7 +231,8 @@ const TYPE_LABELS = {
   [T.INTEGER]: 'um número (aceita 5k, 1m; em dinheiro também "tudo" e "metade")',
   [T.NUMBER]: 'um número',
   [T.BOOLEAN]: 'sim ou não',
-  [T.STRING]: 'um texto'
+  [T.STRING]: 'um texto',
+  [T.ATTACHMENT]: 'uma imagem anexada'
 };
 
 function errorMessage(def, error) {
@@ -222,7 +241,9 @@ function errorMessage(def, error) {
   const dica = (def.options || []).filter((o) => o.type === T.STRING && !o.choices?.length).length > 1
     ? '\n💡 Use aspas para textos com espaços: `"assim"`.' : '';
   switch (error.kind) {
-    case 'missing': return `❌ Falta o argumento **${opt.name}**.\n${uso}${dica}`;
+    case 'missing':
+      if (opt.type === T.ATTACHMENT) return `❌ Anexe uma imagem na mesma mensagem (ou cole o link dela).\n${uso}`;
+      return `❌ Falta o argumento **${opt.name}**.\n${uso}${dica}`;
     case 'invalid': return `❌ Valor inválido para **${opt.name}** (esperado: ${TYPE_LABELS[opt.type] || 'valor'}).\n${uso}${dica}`;
     case 'range': return `❌ **${opt.name}** deve estar entre ${opt.min_value ?? '-∞'} e ${opt.max_value ?? '∞'}.\n${uso}`;
     case 'maxlength': return `❌ **${opt.name}** pode ter no máximo ${opt.max_length} caracteres.`;
@@ -245,19 +266,20 @@ class PrefixOptions {
   getMember(name) { return this.values.get(name)?.member ?? null; }
   getChannel(name) { return this.values.get(name)?.channel ?? null; }
   getRole(name) { return this.values.get(name)?.role ?? null; }
+  getAttachment(name) { return this.values.get(name)?.attachment ?? null; }
 }
 
 const isEphemeral = (p) => !!p && (p.ephemeral === true || (typeof p.flags === 'number' && (p.flags & EPHEMERAL) !== 0));
 
 class PrefixInteraction {
-  constructor(message, def, values) {
+  constructor(message, def, values, member) {
     this.message = message;
     this.isPrefix = true;
     this.commandName = def.name;
     this.client = message.client;
     this.user = message.author;
-    this.member = message.member;
-    this.memberPermissions = message.member?.permissions ?? null;
+    this.member = member;
+    this.memberPermissions = member?.permissions ?? null;
     this.guild = message.guild;
     this.guildId = message.guildId;
     this.channel = message.channel;
@@ -361,7 +383,8 @@ function createPrefixHandler({ builders, dispatch }) {
       for (const [id, t] of lastUse) if (agora - t > 10000) lastUse.delete(id);
     }
 
-    if (!message.member) message.member = await message.guild.members.fetch(message.author.id).catch(() => null);
+    // (message.member é somente leitura no discord.js: usamos uma variável local)
+    const member = message.member ?? await message.guild.members.fetch(message.author.id).catch(() => null);
 
     const parsed = await parseOptions(message, def, match[2] || '');
     if (parsed.error) {
@@ -370,7 +393,7 @@ function createPrefixHandler({ builders, dispatch }) {
       return true;
     }
 
-    await dispatch(new PrefixInteraction(message, def, parsed.values));
+    await dispatch(new PrefixInteraction(message, def, parsed.values, member));
     return true;
   };
 }

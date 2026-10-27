@@ -5,10 +5,9 @@ const {
   SlashCommandBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder
 } = require('discord.js');
 const { JsonStore } = require('./storage');
-const { EPHEMERAL, eph, truncate, normalize, fmtDate, fmtDateTime, unix, respond } = require('./utils');
+const { isStaff, hasFullAccess, checkAccess } = require('./perms');
+const { EPHEMERAL, PREFIX, eph, truncate, normalize, fmtDate, fmtDateTime, unix, respond, describeError } = require('./utils');
 
-const PREFIX = '?';
-const HELP_PAGES = 4;
 const NO_PERM = '❌ Sem permissão.';
 const GUILD_ONLY = '❌ Este comando só funciona dentro de um servidor.';
 const MENTIONS_NONE = { parse: [] };
@@ -45,36 +44,18 @@ const saveConfig = () => configStore.save();
 /* ============================================================
  *  ESTADO EM MEMÓRIA
  * ============================================================ */
-const globalCooldowns = new Map();
 const closingTickets = new Set();
 const creatingTickets = new Set();
+const floodMap = new Map(); // `${servidor}:${usuário}` -> horários das últimas mensagens
 const botDeleted = new Set(); // mensagens apagadas pelo próprio bot (não vão para o log)
-
-function checkGlobalCooldown(userId) {
-  const agora = Date.now();
-  const ultimoUso = globalCooldowns.get(userId) || 0;
-  if (agora - ultimoUso < 3000) return Math.ceil((3000 - (agora - ultimoUso)) / 1000);
-  globalCooldowns.set(userId, agora);
-  return 0;
-}
 
 const isCalado = (guildId, userId) => (state.calados[guildId] || []).includes(userId);
 
 /* ============================================================
  *  PERMISSÕES
  * ============================================================ */
-function hasAdminPermission(member, guildConfig = {}) {
-  if (!member) return false;
-  if (member.permissions?.has(PermissionFlagsBits.Administrator)) return true;
-  if (guildConfig.adminUsers?.includes(member.id)) return true;
-  if (guildConfig.adminRoles?.some((roleId) => member.roles.cache.has(roleId))) return true;
-  return false;
-}
-
-/** Staff do bot OU a permissão nativa do Discord pedida. */
-function canUse(member, guildConfig, perm) {
-  return hasAdminPermission(member, guildConfig) || (perm ? !!member?.permissions?.has(perm) : false);
-}
+/** Administrador do Discord (ou "admin do bot" cadastrado): acesso total. As demais permissões vêm do perms.js. */
+const hasAdminPermission = hasFullAccess;
 
 /** Quem executa precisa estar acima do alvo na hierarquia de cargos. */
 function canModerate(actor, target) {
@@ -84,9 +65,11 @@ function canModerate(actor, target) {
   return actor.roles.highest.position > target.roles.highest.position;
 }
 
-async function deny(ctx, perm, message = NO_PERM) {
-  if (canUse(ctx.member, ctx.guildConfig, perm)) return false;
-  await ctx.interaction.reply(eph(message));
+/** Barra o comando se o usuário não tiver a permissão exigida (veja RULES no perms.js). Comando fora de RULES = só admin. */
+async function deny(ctx) {
+  const erro = checkAccess(ctx.interaction, { strict: true });
+  if (!erro) return false;
+  await ctx.interaction.reply(eph(erro));
   return true;
 }
 
@@ -109,12 +92,38 @@ const LOG_KEYS = {
   duvida: 'duvidasChannel',
   punicao: 'punicoesChannel',
   sugestao: 'suggestionChannel',
-  apagada: 'msgDeleteChannel'
+  apagada: 'msgDeleteChannel',
+  editada: 'msgDeleteChannel'
 };
 
+/** Categorias de log/aviso que a staff pode ligar ou desligar com /logs (padrões pensados para NÃO fazer barulho). */
+const LOG_DEFAULTS = { apagadas: true, editadas: false, punicoes: true, tickets: true, entradas: true, saidas: false, nivel: true };
+const LOG_NAMES = {
+  apagadas: 'Mensagens apagadas',
+  editadas: 'Mensagens editadas',
+  punicoes: 'Punições (ban, kick, mute, aviso)',
+  tickets: 'Transcripts de tickets',
+  entradas: 'Boas-vindas (entrada de membros)',
+  saidas: 'Saída de membros',
+  nivel: 'Avisos de subida de nível'
+};
+const TYPE_TOGGLE = { apagada: 'apagadas', editada: 'editadas', punicao: 'punicoes' };
+
+function logEnabled(guildId, key) {
+  const t = getGuildConfig(guildId).logToggles;
+  return t && key in t ? !!t[key] : LOG_DEFAULTS[key] !== false;
+}
+
+const quietBulk = new Set(); // canais onde um /clear está apagando mensagens (não vai para o log)
+function quietChannel(channelId) {
+  quietBulk.add(channelId);
+  setTimeout(() => quietBulk.delete(channelId), 15000);
+}
+
 /** Envia um embed para o canal de log certo. Devolve a mensagem enviada (ou null). */
-async function sendLog(guild, type, embed, attachment = null) {
+async function sendLog(guild, type, embed, attachment = null, toggle = TYPE_TOGGLE[type]) {
   try {
+    if (toggle && !logEnabled(guild.id, toggle)) return null;
     const cfg = getGuildConfig(guild.id);
     const channelId = (LOG_KEYS[type] && cfg[LOG_KEYS[type]]) || cfg.logsChannel;
     if (!channelId) return null;
@@ -163,7 +172,7 @@ const canalOpt = (desc) => (o) => o.setName('canal').setDescription(desc).setReq
 const allSlashCommands = [
   new SlashCommandBuilder().setName('ping').setDescription('Latência do bot'),
   new SlashCommandBuilder().setName('say').setDescription('Faz o bot falar').addStringOption(o => o.setName('texto').setDescription('Texto').setRequired(true).setMaxLength(2000)),
-  new SlashCommandBuilder().setName('clear').setDescription('Limpa mensagens').addIntegerOption(o => o.setName('qtd').setDescription('Quantidade (1-100)').setRequired(true).setMinValue(1).setMaxValue(100)),
+  new SlashCommandBuilder().setName('clear').setDescription('Limpa mensagens').addIntegerOption(o => o.setName('qtd').setDescription('Quantidade (1-100)').setRequired(true).setMinValue(1).setMaxValue(100)).addUserOption(o => o.setName('usuario').setDescription('Apagar só as mensagens desta pessoa').setRequired(false)),
   new SlashCommandBuilder().setName('avatar').setDescription('Mostra o avatar').addUserOption(o => o.setName('usuario').setDescription('Alvo').setRequired(false)),
   new SlashCommandBuilder().setName('serverinfo').setDescription('Informações do servidor'),
   new SlashCommandBuilder().setName('userinfo').setDescription('Informações de um usuário').addUserOption(o => o.setName('usuario').setDescription('Alvo').setRequired(false)),
@@ -190,7 +199,6 @@ const allSlashCommands = [
   new SlashCommandBuilder().setName('unlock').setDescription('Destranca o canal atual'),
   new SlashCommandBuilder().setName('ticket').setDescription('Envia o painel de atendimento/denúncia'),
   new SlashCommandBuilder().setName('painel-sugestao').setDescription('Envia o painel interativo de sugestões'),
-  new SlashCommandBuilder().setName('help').setDescription('Painel de ajuda interativo'),
   new SlashCommandBuilder().setName('setwelcome').setDescription('Define o canal de boas-vindas').addChannelOption(canalOpt('Canal de texto')),
   new SlashCommandBuilder().setName('setautorole').setDescription('Define o cargo automático para novos membros').addRoleOption(o => o.setName('cargo').setDescription('Cargo de membro').setRequired(true)),
   new SlashCommandBuilder().setName('delautorole').setDescription('Remove o cargo automático de novos membros'),
@@ -200,6 +208,10 @@ const allSlashCommands = [
   new SlashCommandBuilder().setName('setduvidas').setDescription('Define o canal de logs de dúvidas').addChannelOption(canalOpt('Canal')),
   new SlashCommandBuilder().setName('setpunicoes').setDescription('Define o canal de logs de punições').addChannelOption(canalOpt('Canal')),
   new SlashCommandBuilder().setName('setmsgdelete').setDescription('Define o canal de logs para mensagens apagadas').addChannelOption(canalOpt('Canal')),
+  new SlashCommandBuilder().setName('logs').setDescription('Liga/desliga cada tipo de log e aviso do bot (vazio = ver o que está ativo)')
+    .addStringOption(o => o.setName('categoria').setDescription('Qual log').setRequired(false).addChoices(...Object.entries(LOG_NAMES).map(([value, name]) => ({ name, value }))))
+    .addBooleanOption(o => o.setName('status').setDescription('Ligado ou desligado (vazio = alterna)').setRequired(false)),
+  new SlashCommandBuilder().setName('setnivel').setDescription('Define o canal dos avisos de subida de nível').addChannelOption(canalOpt('Canal')),
   new SlashCommandBuilder().setName('setverify').setDescription('Envia o painel de verificação por botão').addChannelOption(canalOpt('Canal de verificação')).addRoleOption(o => o.setName('cargo').setDescription('Cargo liberado ao verificar').setRequired(true)),
   new SlashCommandBuilder().setName('automod').setDescription('Ativa ou desativa o automod de links').addBooleanOption(o => o.setName('status').setDescription('Ligado/Desligado').setRequired(true)),
   new SlashCommandBuilder().setName('sugerir').setDescription('Envia uma sugestão').addStringOption(o => o.setName('ideia').setDescription('Sua ideia').setRequired(true).setMaxLength(1500)),
@@ -227,83 +239,6 @@ const allSlashCommands = [
   new SlashCommandBuilder().setName('deladminrole').setDescription('Remove um cargo da administração do bot').addRoleOption(o => o.setName('cargo').setDescription('Cargo').setRequired(true)),
   new SlashCommandBuilder().setName('deladminuser').setDescription('Remove um usuário da administração do bot').addUserOption(o => o.setName('usuario').setDescription('Usuário').setRequired(true))
 ];
-
-/* ============================================================
- *  AJUDA
- * ============================================================ */
-function getHelpEmbed(page) {
-  const embed = new EmbedBuilder().setColor(0x00AE86).setFooter({ text: `Página ${page} de ${HELP_PAGES} • Zapher Bot` });
-  switch (page) {
-    case 1:
-      embed.setTitle('📖 Central de Ajuda — Moderação & Administração (1/4)').addFields(
-        { name: '🛡️ Comandos de Staff & Punições', value: [
-          '• `/clear`: Limpa mensagens.',
-          '• `/ban [usuario] [minutos]`: Bane com tempo opcional.',
-          '• `/unban [id]`: Remove um banimento.',
-          '• `/mute [usuario] [minutos]`: Silencia com tempo.',
-          '• `/unmute`: Remove o silêncio.',
-          '• `/kick`: Expulsa o membro.',
-          '• `/calado`: Apaga msgs automaticamente.',
-          '• `/warn` / `/warnings` / `/clearwarns`: Avisos.'
-        ].join('\n') },
-        { name: '🔧 Gestão', value: [
-          '• `/setcargo`: Dá ou tira um cargo.',
-          '• `/nick` / `/permnick` / `/unpermnick`: Apelidos.',
-          '• `/lock` / `/unlock` / `/slowmode`: Controle do canal.',
-          '• `/censura` / `/automod`: Filtros do chat.',
-          '• `/sorteio`: Cria um sorteio.'
-        ].join('\n') }
-      );
-      break;
-    case 2:
-      embed.setTitle('📖 Central de Ajuda — Configurações & Logs (2/4)').addFields({ name: '⚙️ Setups do Servidor', value: [
-        '• `/setwelcome`: Boas-vindas.',
-        '• `/setlogs`: Logs geral.',
-        '• `/setdenuncias`: Denúncias.',
-        '• `/setduvidas`: Dúvidas.',
-        '• `/setpunicoes`: Punições.',
-        '• `/setmsgdelete`: Mensagens apagadas.',
-        '• `/setsuggestion`: Sugestões.',
-        '• `/setverify`: Painel de verificação.',
-        '• `/setautorole` / `/delautorole`: Cargo automático.',
-        '• `/setadminrole` / `/setadminuser`: Dar acesso de staff.',
-        '• `/deladminrole` / `/deladminuser`: Tirar acesso de staff.'
-      ].join('\n') });
-      break;
-    case 3:
-      embed.setTitle('📖 Central de Ajuda — Economia & Ganhos (3/4)').addFields({ name: '💳 Sistema Financeiro & Trabalho', value: [
-        '• `/saldo` / `/patrimonio`: Consulta fundos.',
-        '• `/depositar` / `/sacar` / `/transferir`: Banco e Pix.',
-        '• `/perfil` / `/rank` / `/extrato` / `/inventario`: Dados e Top 10.',
-        '• `/daily` / `/weekly` / `/trabalhar`: Ganhos fixos.',
-        '• `/minerar` / `/pescar` / `/cacar` / `/farmar`: Ganhos extras.',
-        '• `/investir` / `/loteria`: Aplicações e sorte.',
-        '• `/emprestimo` / `/pagar`: Crédito do banco.'
-      ].join('\n') });
-      break;
-    case 4:
-      embed.setTitle('📖 Central de Ajuda — Lojas, Jogos & Utilitários (4/4)').addFields({ name: '🛒 Lojas & Outros', value: [
-        '• `/mercado` / `/loja`: Painel interativo de compras.',
-        '• `/apostar` / `/slots` / `/coinflip` / `/roleta`: Jogos de risco.',
-        '• `/roubar` / `/crime`: Para os mais ousados.',
-        '• `/ticket` / `/sugerir` / `/denuncia`: Suporte e ideias.',
-        '• `/ping` / `/say` / `/embed`: Utilitários.',
-        '• `/avatar` / `/userinfo` / `/serverinfo`: Informações.',
-        `• Prefixo \`${PREFIX}\`: \`${PREFIX}ping\`, \`${PREFIX}help\`, \`${PREFIX}say\`, \`${PREFIX}clear\`, \`${PREFIX}lock\`, \`${PREFIX}unlock\`, \`${PREFIX}ticket\`.`
-      ].join('\n') });
-      break;
-    default:
-      return getHelpEmbed(1);
-  }
-  return embed;
-}
-
-function getHelpButtons(page) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('help_prev').setLabel('◀️ Anterior').setStyle(ButtonStyle.Primary).setDisabled(page <= 1),
-    new ButtonBuilder().setCustomId('help_next').setLabel('Próxima ▶️').setStyle(ButtonStyle.Primary).setDisabled(page >= HELP_PAGES)
-  );
-}
 
 /* ============================================================
  *  PAINÉIS
@@ -348,115 +283,69 @@ async function sendVerifyPanel(channel, role) {
 /* ============================================================
  *  MENSAGENS (censura, automod, calado e comandos com prefixo)
  * ============================================================ */
-const PREFIX_COMMANDS = {
-  async ping({ message }) {
-    return message.reply(`🏓 Pong! ${Date.now() - message.createdTimestamp}ms`);
-  },
-  async help({ message }) {
-    return message.reply({ embeds: [getHelpEmbed(1)], components: [getHelpButtons(1)] });
-  },
-  async say({ message, args, channel, staff }) {
-    const texto = args.join(' ');
-    if (!texto) return message.reply('❌ Escreve o texto que queres que o bot diga.');
-    if (texto.length > 2000) return message.reply('❌ Máximo de 2000 caracteres.');
-    await message.delete().catch(() => {});
-    return channel.send({ content: texto, allowedMentions: { parse: staff ? ['users', 'roles'] : [] } });
-  },
-  async clear({ message, args, member, channel, guildConfig }) {
-    if (!canUse(member, guildConfig, PermissionFlagsBits.ManageMessages)) return message.reply(NO_PERM);
-    const qtd = parseInt(args[0], 10);
-    if (!qtd || qtd < 1 || qtd > 100) return message.reply('❌ Indica uma quantidade entre 1 e 100.');
-    try {
-      await message.delete().catch(() => {});
-      const apagadas = await channel.bulkDelete(qtd, true);
-      const msg = await channel.send(`✅ ${apagadas.size} mensagens limpas!`);
-      setTimeout(() => msg.delete().catch(() => {}), 3000);
-    } catch (_) {
-      return channel.send('❌ Erro ao limpar mensagens.');
-    }
-  },
-  async lock({ message, member, channel, guild, guildConfig }) {
-    if (!canUse(member, guildConfig, PermissionFlagsBits.ManageChannels)) return message.reply(NO_PERM);
-    try {
-      await channel.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: false });
-      return message.reply('🔒 Canal trancado com sucesso!');
-    } catch (_) {
-      return message.reply('❌ Não consegui trancar este canal.');
-    }
-  },
-  async unlock({ message, member, channel, guild, guildConfig }) {
-    if (!canUse(member, guildConfig, PermissionFlagsBits.ManageChannels)) return message.reply(NO_PERM);
-    try {
-      await channel.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: null });
-      return message.reply('🔓 Canal destrancado com sucesso!');
-    } catch (_) {
-      return message.reply('❌ Não consegui destrancar este canal.');
-    }
-  },
-  async ticket({ message, member, channel, guildConfig }) {
-    if (!hasAdminPermission(member, guildConfig)) return message.reply(NO_PERM);
-    await sendTicketPanel(channel);
-    return message.reply('✅ Painel de tickets enviado!');
-  }
-};
-
 async function processMessage(message) {
-  if (message.author.bot || !message.guild) return;
+  if (message.author.bot || !message.guild) return false;
 
   const guild = message.guild;
   const guildConfig = getGuildConfig(guild.id);
 
-  if (isCalado(guild.id, message.author.id)) {
-    await silentDelete(message);
-    return;
-  }
+  if (isCalado(guild.id, message.author.id)) return silentDelete(message);
 
-  const content = message.content.trim();
   const palavras = censuraStore.data[guild.id] || [];
-  const precisaMembro = palavras.length > 0 || guildConfig.automod || content.startsWith(PREFIX);
-  if (!precisaMembro) return;
+  if (palavras.length === 0 && !guildConfig.automod) return false;
 
   const member = message.member || await guild.members.fetch(message.author.id).catch(() => null);
-  const staff = hasAdminPermission(member, guildConfig);
+  if (isStaff(member, guildConfig)) return false; // moderadores não são filtrados
 
   // Censura
-  if (palavras.length > 0 && !staff) {
+  if (palavras.length > 0) {
     const texto = normalize(message.content);
     if (palavras.some((p) => texto.includes(normalize(p)))) {
       if (await silentDelete(message)) {
         const aviso = await message.channel.send({ content: `⚠️ <@${message.author.id}>, mensagem apagada por conter censura.`, allowedMentions: { users: [message.author.id] } }).catch(() => null);
         if (aviso) setTimeout(() => aviso.delete().catch(() => {}), 4000);
-        return;
+        return true;
       }
     }
   }
 
-  // Automod de links
-  if (guildConfig.automod && !staff && !member?.permissions.has(PermissionFlagsBits.ManageMessages) && LINK_REGEX.test(message.content)) {
-    if (await silentDelete(message)) {
-      const aviso = await message.channel.send({ content: `🔗 <@${message.author.id}>, links não são permitidos aqui.`, allowedMentions: { users: [message.author.id] } }).catch(() => null);
-      if (aviso) setTimeout(() => aviso.delete().catch(() => {}), 4000);
-      return;
+  // Automod: flood e spam de menções
+  if (guildConfig.automod) {
+    const chave = `${guild.id}:${message.author.id}`;
+    const agora = Date.now();
+    const recentes = (floodMap.get(chave) || []).filter((t) => agora - t < 6000);
+    recentes.push(agora);
+    floodMap.set(chave, recentes);
+    const mencoes = message.mentions.users.size + message.mentions.roles.size;
+
+    if (recentes.length >= 7 || mencoes >= 6) {
+      floodMap.delete(chave);
+      await silentDelete(message);
+      if (member?.moderatable) await member.timeout(mencoes >= 6 ? 5 * 60000 : 60000, 'Automod: flood/spam de menções').catch(() => {});
+      const aviso = await message.channel.send({ content: `🚫 <@${message.author.id}> foi silenciado por ${mencoes >= 6 ? 'spam de menções' : 'flood de mensagens'}.`, allowedMentions: { users: [message.author.id] } }).catch(() => null);
+      if (aviso) setTimeout(() => aviso.delete().catch(() => {}), 5000);
+      return true;
     }
   }
 
-  // Comandos com prefixo
-  if (!content.startsWith(PREFIX)) return;
-  const [rawCmd, ...args] = content.slice(PREFIX.length).trim().split(/\s+/);
-  const command = (rawCmd || '').toLowerCase();
-  if (!Object.hasOwn(PREFIX_COMMANDS, command)) return;
-
-  const tempoRestante = checkGlobalCooldown(message.author.id);
-  if (tempoRestante > 0) return message.reply(`⏳ Aguarde **${tempoRestante} segundos** para usar outro comando.`);
-
-  await PREFIX_COMMANDS[command]({ message, args, member, guild, channel: message.channel, guildConfig, staff });
+  // Automod de links
+  if (guildConfig.automod && !member?.permissions.has(PermissionFlagsBits.ManageMessages) && LINK_REGEX.test(message.content)) {
+    if (await silentDelete(message)) {
+      const aviso = await message.channel.send({ content: `🔗 <@${message.author.id}>, links não são permitidos aqui.`, allowedMentions: { users: [message.author.id] } }).catch(() => null);
+      if (aviso) setTimeout(() => aviso.delete().catch(() => {}), 4000);
+      return true;
+    }
+  }
+  return false;
 }
 
+/** Devolve true se a mensagem foi removida (calado, censura ou automod). */
 async function handleMessage(message) {
   try {
-    await processMessage(message);
+    return (await processMessage(message)) === true;
   } catch (err) {
     console.error('[mensagem]', err);
+    return false;
   }
 }
 
@@ -464,6 +353,7 @@ async function handleMessageDelete(message) {
   try {
     if (!message.guild) return;
     if (botDeleted.delete(message.id)) return;
+    if (!logEnabled(message.guild.id, 'apagadas')) return;
     if (message.author?.bot) return;
 
     const anexos = message.attachments?.size ? `\n📎 ${[...message.attachments.values()].map((a) => a.name).join(', ')}` : '';
@@ -482,9 +372,31 @@ async function handleMessageDelete(message) {
   }
 }
 
+async function handleMessageUpdate(oldMsg, newMsg) {
+  try {
+    if (!newMsg.guild || newMsg.author?.bot) return;
+    if (!logEnabled(newMsg.guild.id, 'editadas')) return;
+    if (oldMsg.content === newMsg.content) return; // só mudou embed/fixação
+    const embed = new EmbedBuilder()
+      .setColor(0x3498DB)
+      .setTitle('✏️ Mensagem Editada')
+      .addFields(
+        { name: '👤 Autor', value: newMsg.author ? `<@${newMsg.author.id}>` : 'Desconhecido', inline: true },
+        { name: '📁 Canal', value: `<#${newMsg.channelId}> • [ir para a mensagem](${newMsg.url})`, inline: true },
+        { name: 'Antes', value: truncate(oldMsg.content || '*(não estava em cache)*', 1024) },
+        { name: 'Depois', value: truncate(newMsg.content || '*(vazio)*', 1024) }
+      )
+      .setTimestamp();
+    await sendLog(newMsg.guild, 'editada', embed);
+  } catch (err) {
+    console.error('[msgUpdate]', err.message);
+  }
+}
+
 async function handleMessageDeleteBulk(messages, channel) {
   try {
     if (!channel?.guild) return;
+    if (quietBulk.has(channel.id) || !logEnabled(channel.guild.id, 'apagadas')) return;
     const embed = new EmbedBuilder()
       .setColor(0xE67E22)
       .setTitle('🧹 Mensagens Apagadas em Massa')
@@ -552,9 +464,12 @@ async function createTicket(interaction, tipo) {
       { id: interaction.client.user.id, allow: [...basePerms, PermissionFlagsBits.ManageChannels] }
     ];
 
-    // A staff configurada também precisa enxergar o ticket
-    const staffRoles = (cfg.adminRoles || []).filter((id) => guild.roles.cache.has(id));
-    for (const roleId of staffRoles) overwrites.push({ id: roleId, allow: basePerms });
+    // A staff (cargos com permissão de moderar/administrar) também precisa enxergar o ticket
+    const ehStaff = (r) => !r.managed && r.id !== guild.id
+      && ['Administrator', 'ManageMessages', 'ModerateMembers', 'ManageGuild'].some((p) => r.permissions.has(p));
+    const staffRoleIds = new Set([...guild.roles.cache.filter(ehStaff).keys(), ...(cfg.adminRoles || []).filter((id) => guild.roles.cache.has(id))]);
+    for (const roleId of staffRoleIds) overwrites.push({ id: roleId, allow: basePerms });
+    const staffRoles = (cfg.adminRoles || []).filter((id) => guild.roles.cache.has(id)); // só estes são marcados (@)
     for (const userId of cfg.adminUsers || []) {
       if (userId === member.id) continue;
       const m = await guild.members.fetch(userId).catch(() => null);
@@ -606,7 +521,7 @@ async function closeTicket(interaction) {
   const meta = parseTicketTopic(channel);
   if (!meta) return interaction.reply(eph('❌ Isto não é um canal de ticket.'));
 
-  const staff = hasAdminPermission(interaction.member, getGuildConfig(interaction.guild.id));
+  const staff = isStaff(interaction.member, getGuildConfig(interaction.guild.id));
   if (meta.creatorId && interaction.user.id !== meta.creatorId && !staff) {
     return interaction.reply(eph('❌ Só quem abriu o ticket ou a staff pode fechá-lo.'));
   }
@@ -629,8 +544,8 @@ async function closeTicket(interaction) {
       )
       .setTimestamp();
 
-    const enviado = await sendLog(channel.guild, meta.tipo, transcriptEmbed, attachment);
-    if (!enviado && meta.creatorId) {
+    const enviado = await sendLog(channel.guild, meta.tipo, transcriptEmbed, attachment, 'tickets');
+    if (!enviado && meta.creatorId && logEnabled(channel.guild.id, 'tickets')) {
       // Sem canal de logs configurado: tenta entregar o transcript por DM ao criador
       const dono = await interaction.client.users.fetch(meta.creatorId).catch(() => null);
       if (dono) await dono.send({ embeds: [transcriptEmbed], files: [new AttachmentBuilder(Buffer.from(transcriptText || 'Vazio', 'utf-8'), { name: `transcript-${channel.name}.txt` })] }).catch(() => {});
@@ -676,7 +591,8 @@ const CHANNEL_KEYS = {
   setdenuncias: 'denunciasChannel',
   setduvidas: 'duvidasChannel',
   setpunicoes: 'punicoesChannel',
-  setmsgdelete: 'msgDeleteChannel'
+  setmsgdelete: 'msgDeleteChannel',
+  setnivel: 'levelChannel'
 };
 
 const setChannelCommand = (commandName) => async (ctx) => {
@@ -691,10 +607,6 @@ const setChannelCommand = (commandName) => async (ctx) => {
 const COMMANDS = {
   async ping({ interaction }) {
     await interaction.reply(eph(`🏓 Pong! ${Date.now() - interaction.createdTimestamp}ms (API: ${Math.round(interaction.client.ws.ping)}ms)`));
-  },
-
-  async help({ interaction }) {
-    await interaction.reply({ embeds: [getHelpEmbed(1)], components: [getHelpButtons(1)], flags: EPHEMERAL });
   },
 
   async lock(ctx) {
@@ -733,19 +645,32 @@ const COMMANDS = {
 
   async say(ctx) {
     const { interaction, channel, options, member, guildConfig } = ctx;
-    const staff = hasAdminPermission(member, guildConfig);
+    const staff = isStaff(member, guildConfig);
     await channel.send({ content: options.getString('texto'), allowedMentions: { parse: staff ? ['users', 'roles'] : [] } });
+    if (interaction.isPrefix) return silentDelete(interaction.message);
     await interaction.reply(eph('✅ Enviado!'));
   },
 
   async clear(ctx) {
     const { interaction, channel, options } = ctx;
-    if (await deny(ctx, PermissionFlagsBits.ManageMessages)) return;
+    if (await deny(ctx)) return;
     const qtd = options.getInteger('qtd');
+    const alvo = options.getUser('usuario');
     await interaction.deferReply({ flags: EPHEMERAL });
     try {
-      const apagadas = await channel.bulkDelete(qtd, true);
-      await interaction.editReply({ content: `✅ ${apagadas.size} mensagens limpas!` });
+      quietChannel(channel.id); // a limpeza da staff não entra no log de mensagens apagadas
+      let total;
+      if (alvo) {
+        // Só as mensagens da pessoa escolhida (dentro das últimas 100 do canal)
+        const lote = await channel.messages.fetch({ limit: 100 });
+        const dela = [...lote.filter((m) => m.author.id === alvo.id).values()].slice(0, qtd);
+        total = dela.length ? (await channel.bulkDelete(dela, true)).size : 0;
+      } else {
+        // No prefixo, a mensagem do comando também está no canal: apaga uma a mais
+        const apagadas = await channel.bulkDelete(Math.min(100, qtd + (interaction.isPrefix ? 1 : 0)), true);
+        total = Math.max(0, apagadas.size - (interaction.isPrefix ? 1 : 0));
+      }
+      await interaction.editReply({ content: `✅ ${total} mensagens limpas${alvo ? ` de ${alvo.tag}` : ''}!` });
     } catch (_) {
       await interaction.editReply({ content: '❌ Erro ao limpar mensagens.' });
     }
@@ -1035,6 +960,22 @@ const COMMANDS = {
     await interaction.reply(eph(`✅ Automod de links ${ligado ? '**ativado**' : '**desativado**'}!`));
   },
 
+  async logs(ctx) {
+    const { interaction, options, guild } = ctx;
+    if (await deny(ctx)) return;
+    const categoria = options.getString('categoria');
+    const status = options.getBoolean('status');
+    if (categoria) {
+      const cfg = ensureGuildConfig(guild.id);
+      cfg.logToggles ??= {};
+      cfg.logToggles[categoria] = status ?? !logEnabled(guild.id, categoria);
+      saveConfig();
+    }
+    const linhas = Object.entries(LOG_NAMES).map(([k, nome]) => `${logEnabled(guild.id, k) ? '🟢' : '🔴'} **${nome}** — \`${k}\``).join('\n');
+    const embed = new EmbedBuilder().setColor(0x3498DB).setTitle('🔔 Logs e avisos do bot').setDescription(`${linhas}\n\nMude com \`/logs categoria:apagadas status:não\` (ou \`${PREFIX}logs apagadas nao\`).`);
+    return interaction.reply({ embeds: [embed], flags: EPHEMERAL });
+  },
+
   async setadminrole(ctx) {
     const { interaction, options, member, guild } = ctx;
     if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply(eph('❌ Apenas Administradores.'));
@@ -1213,14 +1154,6 @@ async function handleCommand(interaction) {
 async function handleButton(interaction) {
   const id = interaction.customId;
 
-  if (id === 'help_prev' || id === 'help_next') {
-    const footer = interaction.message.embeds[0]?.footer?.text || '';
-    let page = parseInt((footer.match(/Página (\d+)/) || [])[1], 10) || 1;
-    if (id === 'help_prev' && page > 1) page--;
-    if (id === 'help_next' && page < HELP_PAGES) page++;
-    return interaction.update({ embeds: [getHelpEmbed(page)], components: [getHelpButtons(page)] });
-  }
-
   const ownIds = ['verify_btn', 'btn_abrir_sugestao', 'create_ticket_duvida', 'create_ticket_denuncia', 'claim_ticket', 'close_ticket'];
   if (!ownIds.includes(id) && !id.startsWith('rate_')) return;
   if (!interaction.guild) return interaction.reply(eph(GUILD_ONLY));
@@ -1255,7 +1188,7 @@ async function handleButton(interaction) {
   if (id === 'create_ticket_denuncia') return createTicket(interaction, 'denuncia');
 
   if (id === 'claim_ticket') {
-    if (!hasAdminPermission(interaction.member, getGuildConfig(interaction.guild.id))) {
+    if (!isStaff(interaction.member, getGuildConfig(interaction.guild.id))) {
       return interaction.reply(eph('❌ Apenas a staff pode assumir tickets.'));
     }
     const rows = interaction.message.components.map((row) => ActionRowBuilder.from(row));
@@ -1304,7 +1237,7 @@ async function handleInteraction(interaction) {
     if (interaction.isChatInputCommand()) return await handleCommand(interaction);
   } catch (err) {
     console.error('[interação/ticket]', err);
-    try { await respond(interaction, eph('❌ Ocorreu um erro inesperado ao executar isso.')); } catch (_) { /* ignora */ }
+    try { const aviso = describeError(err); if (aviso) await respond(interaction, eph(aviso)); } catch (_) { /* ignora */ }
   }
 }
 
@@ -1321,7 +1254,7 @@ async function handleGuildMemberAdd(member) {
     const fixo = state.permNicks[member.guild.id]?.[member.id];
     if (fixo) await member.setNickname(fixo, 'PermNick Active').catch(() => {});
 
-    if (!conf.welcomeChannel) return;
+    if (!conf.welcomeChannel || !logEnabled(member.guild.id, 'entradas')) return;
     const channel = member.guild.channels.cache.get(conf.welcomeChannel);
     if (!channel) return;
     const embed = new EmbedBuilder()
@@ -1339,7 +1272,7 @@ async function handleGuildMemberAdd(member) {
 async function handleGuildMemberRemove(member) {
   try {
     const conf = getGuildConfig(member.guild.id);
-    if (!conf.welcomeChannel) return;
+    if (!conf.welcomeChannel || !logEnabled(member.guild.id, 'saidas')) return;
     const channel = member.guild.channels.cache.get(conf.welcomeChannel);
     if (!channel) return;
     const nome = member.user?.tag || 'Um membro';
@@ -1399,15 +1332,15 @@ async function schedulerTick(client) {
       stateStore.save();
     }
 
+    for (const [chave, horarios] of floodMap) {
+      if (!horarios.length || now - horarios[horarios.length - 1] > 10000) floodMap.delete(chave);
+    }
+
     const sorteiosVencidos = state.giveaways.filter((g) => g.endsAt <= now);
     if (sorteiosVencidos.length) {
       state.giveaways = state.giveaways.filter((g) => g.endsAt > now);
       stateStore.save();
       for (const g of sorteiosVencidos) await finishGiveaway(client, g).catch((err) => console.error('[sorteio]', err.message));
-    }
-
-    for (const [userId, last] of globalCooldowns) {
-      if (now - last > 10000) globalCooldowns.delete(userId);
     }
   } catch (err) {
     console.error('[agendador]', err);
@@ -1434,5 +1367,12 @@ module.exports = {
   handleGuildMemberUpdate,
   sendTicketPanel,
   startScheduler,
-  getConfig
+  getConfig,
+  getGuildConfig,
+  ensureGuildConfig,
+  saveConfig,
+  hasAdminPermission,
+  isStaff,
+  logEnabled,
+  handleMessageUpdate
 };

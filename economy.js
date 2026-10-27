@@ -2,7 +2,8 @@
 
 const { EmbedBuilder, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { JsonStore } = require('./storage');
-const { EPHEMERAL, ALL_AMOUNT, HALF_AMOUNT, eph, truncate, normalize, fmtDate, unix, randInt, respond } = require('./utils');
+const { checkAccess } = require('./perms');
+const { EPHEMERAL, ALL_AMOUNT, HALF_AMOUNT, eph, truncate, normalize, fmtDate, unix, randInt, respond, describeError } = require('./utils');
 
 // ID do dono do bot (opcional). Defina a variável de ambiente CREATOR_ID no Render.
 const CREATOR_ID = process.env.CREATOR_ID || '';
@@ -25,9 +26,9 @@ const ECONOMY = {
   levelUpChance: 0.25,
   levelBonus: 0.05,          // +5% de ganhos por nível de trabalho
   rendaUpgradeBonus: 0.2,    // "Upgrade Renda Nv2": +20% de ganhos
-  gamble: { winChance: 0.48, coinflipChance: 0.49, luckBonus: 0.03 },
+  gamble: { winChance: 0.46, coinflipChance: 0.46, luckBonus: 0.03 }, // com o Amuleto (+3%) o máximo é 49%: a banca sempre ganha no longo prazo
   lottery: { price: 5000, chance: 0.02, prize: 200000 },
-  loan: { base: 500000, perLevel: 100000, interest: 0.2 },
+  loan: { base: 500000, perLevel: 100000, interest: 0.2, garnish: 0.3 }, // garnish: % dos ganhos que vai direto para a dívida
   crime: { cooldown: 3 * MINUTE, baseChance: 0.45, min: 15000, max: 60000, fineMin: 10000, fineMax: 25000 },
   rob: { cooldown: 5 * MINUTE, baseChance: 0.4, minTarget: 5000, minPct: 0.1, maxPct: 0.3, cap: 150000, fineMin: 8000, fineMax: 20000 },
   sellRate: 0.5,             // /vender devolve 50% do preço
@@ -63,43 +64,43 @@ const INVESTMENTS = {
 const CATALOG = {
   veiculos: {
     titulo: '🚗 **Escolhe o teu veículo de sonho:**', style: ButtonStyle.Primary, itens: [
-      { id: 'moto', nome: 'Moto Esportiva', preco: 350000, label: 'Moto (R$ 350k)' },
-      { id: 'desportivo', nome: 'Carro Desportivo', preco: 1200000, label: 'Desportivo (R$ 1.2M)' },
-      { id: 'supercarro', nome: 'Supercarro Luxo', preco: 4500000, label: 'Supercarro (R$ 4.5M)' }
+      { id: 'moto', nome: 'Moto Esportiva', preco: 350000, label: 'Moto (🪙 350k)' },
+      { id: 'desportivo', nome: 'Carro Desportivo', preco: 1200000, label: 'Desportivo (🪙 1.2M)' },
+      { id: 'supercarro', nome: 'Supercarro Luxo', preco: 4500000, label: 'Supercarro (🪙 4.5M)' }
     ]
   },
   casas: {
     titulo: '🏡 **Escolhe o teu imóvel:**', style: ButtonStyle.Primary, itens: [
-      { id: 'kitnet', nome: 'Kitnet Central', preco: 250000, label: 'Kitnet (R$ 250k)' },
-      { id: 'apartamento', nome: 'Apartamento de Luxo', preco: 1800000, label: 'Apartamento (R$ 1.8M)' },
-      { id: 'mansao', nome: 'Mansao com Piscina', preco: 12000000, label: 'Mansão (R$ 12M)' }
+      { id: 'kitnet', nome: 'Kitnet Central', preco: 250000, label: 'Kitnet (🪙 250k)' },
+      { id: 'apartamento', nome: 'Apartamento de Luxo', preco: 1800000, label: 'Apartamento (🪙 1.8M)' },
+      { id: 'mansao', nome: 'Mansao com Piscina', preco: 12000000, label: 'Mansão (🪙 12M)' }
     ]
   },
   celulares: {
     titulo: '📱 **Escolhe o teu telemóvel:**', style: ButtonStyle.Primary, itens: [
-      { id: 'basico', nome: 'Smartphone Basico', preco: 15000, label: 'Básico (R$ 15k)' },
-      { id: 'promax', nome: 'Smartphone Pro Max', preco: 85000, label: 'Pro Max (R$ 85k)' },
-      { id: 'gold', nome: 'Edicao Limitada Ouro', preco: 300000, label: 'Gold (R$ 300k)' }
+      { id: 'basico', nome: 'Smartphone Basico', preco: 15000, label: 'Básico (🪙 15k)' },
+      { id: 'promax', nome: 'Smartphone Pro Max', preco: 85000, label: 'Pro Max (🪙 85k)' },
+      { id: 'gold', nome: 'Edicao Limitada Ouro', preco: 300000, label: 'Gold (🪙 300k)' }
     ]
   },
   cargos: {
     titulo: '👑 **Escolhe o teu cargo VIP:**', style: ButtonStyle.Success, itens: [
-      { id: 'vipbronze', nome: 'VIP Bronze (30d)', preco: 500000, label: 'VIP Bronze (R$ 500k)', vip: true },
-      { id: 'vipprata', nome: 'VIP Prata (30d)', preco: 1500000, label: 'VIP Prata (R$ 1.5M)', vip: true },
-      { id: 'vipouro', nome: 'VIP Ouro (30d)', preco: 5000000, label: 'VIP Ouro (R$ 5M)', vip: true }
+      { id: 'vipbronze', nome: 'VIP Bronze (30d)', preco: 500000, label: 'VIP Bronze (🪙 500k)', vip: true },
+      { id: 'vipprata', nome: 'VIP Prata (30d)', preco: 1500000, label: 'VIP Prata (🪙 1.5M)', vip: true },
+      { id: 'vipouro', nome: 'VIP Ouro (30d)', preco: 5000000, label: 'VIP Ouro (🪙 5M)', vip: true }
     ]
   },
   upgrades: {
     titulo: '⚡ **Escolhe o teu upgrade:**', style: ButtonStyle.Success, itens: [
-      { id: 'renda', nome: 'Upgrade Renda Nv2', preco: 200000, label: 'Renda Nv2 (R$ 200k)', unico: true },
-      { id: 'fuga', nome: 'Kit Fuga Rapida', preco: 450000, label: 'Kit Fuga (R$ 450k)', unico: true },
-      { id: 'sorte', nome: 'Amuleto da Sorte', preco: 800000, label: 'Sorte (R$ 800k)', unico: true }
+      { id: 'renda', nome: 'Upgrade Renda Nv2', preco: 200000, label: 'Renda Nv2 (🪙 200k)', unico: true },
+      { id: 'fuga', nome: 'Kit Fuga Rapida', preco: 450000, label: 'Kit Fuga (🪙 450k)', unico: true },
+      { id: 'sorte', nome: 'Amuleto da Sorte', preco: 800000, label: 'Sorte (🪙 800k)', unico: true }
     ]
   },
   armamento: {
     titulo: '🔫 **Escolhe o teu armamento:**', style: ButtonStyle.Danger, itens: [
-      { id: 'kitleve', nome: 'Kit Tatico Leve', preco: 150000, label: 'Kit Leve (R$ 150k)', unico: true },
-      { id: 'kitpesado', nome: 'Kit Tatico Pesado', preco: 600000, label: 'Kit Pesado (R$ 600k)', unico: true }
+      { id: 'kitleve', nome: 'Kit Tatico Leve', preco: 150000, label: 'Kit Leve (🪙 150k)', unico: true },
+      { id: 'kitpesado', nome: 'Kit Tatico Pesado', preco: 600000, label: 'Kit Pesado (🪙 600k)', unico: true }
     ]
   }
 };
@@ -157,7 +158,7 @@ const economySlashCommands = [
 
   new SlashCommandBuilder().setName('roubar').setDescription('Tenta roubar outro membro').addUserOption(o => o.setName('usuario').setDescription('Alvo').setRequired(true)),
   new SlashCommandBuilder().setName('crime').setDescription('Comete um crime arriscado na cidade'),
-  new SlashCommandBuilder().setName('apostar').setDescription('Aposta dinheiro num jogo rápido de sorte').addIntegerOption(valorOpt()),
+  new SlashCommandBuilder().setName('apostar').setDescription('Aposta dinheiro na sorte (ou desafie alguém para um duelo 50/50)').addIntegerOption(valorOpt()).addUserOption(o => o.setName('usuario').setDescription('Desafiar esta pessoa para um duelo valendo o mesmo valor').setRequired(false)),
   new SlashCommandBuilder().setName('coinflip').setDescription('Joga cara ou coroa apostando').addStringOption(o => o.setName('escolha').setDescription('cara ou coroa').setRequired(true).addChoices({ name: 'Cara', value: 'cara' }, { name: 'Coroa', value: 'coroa' })).addIntegerOption(valorOpt()),
   new SlashCommandBuilder().setName('slots').setDescription('Joga na máquina caça-níqueis').addIntegerOption(valorOpt()),
   new SlashCommandBuilder().setName('roleta').setDescription('Aposta na roleta da sorte').addStringOption(o => o.setName('cor').setDescription('vermelho, preto ou verde').setRequired(true).addChoices({ name: 'Vermelho', value: 'vermelho' }, { name: 'Preto', value: 'preto' }, { name: 'Verde', value: 'verde' })).addIntegerOption(valorOpt()),
@@ -168,13 +169,13 @@ const economySlashCommands = [
   new SlashCommandBuilder().setName('inventario').setDescription('Mostra os itens que tens guardados'),
 
   new SlashCommandBuilder().setName('investir').setDescription('Aplica dinheiro em fundos de investimento variados').addStringOption(o => o.setName('opcao').setDescription('Tipo de investimento').setRequired(true).addChoices(
-    { name: 'Criptomoedas (Alto Risco) - R$ 50.000', value: 'crypto' },
-    { name: 'Tesouro Direto (Baixo Risco) - R$ 20.000', value: 'tesouro' },
-    { name: 'Ações da Bolsa (Médio Risco) - R$ 35.000', value: 'acoes' }
+    { name: 'Criptomoedas (Alto Risco) - 🪙 50.000', value: 'crypto' },
+    { name: 'Tesouro Direto (Baixo Risco) - 🪙 20.000', value: 'tesouro' },
+    { name: 'Ações da Bolsa (Médio Risco) - 🪙 35.000', value: 'acoes' }
   )),
   new SlashCommandBuilder().setName('emprestimo').setDescription('Pede um empréstimo ao banco').addIntegerOption(valorOpt()),
   new SlashCommandBuilder().setName('pagar').setDescription('Paga a tua dívida do empréstimo').addIntegerOption(valorOpt('Quanto pagar')),
-  new SlashCommandBuilder().setName('loteria').setDescription('Compra um bilhete de loteria por R$ 5.000'),
+  new SlashCommandBuilder().setName('loteria').setDescription('Compra um bilhete de loteria por 🪙 5.000'),
 
   new SlashCommandBuilder().setName('addmoney').setDescription('[DONO] Adiciona dinheiro a um usuário').addUserOption(o => o.setName('usuario').setDescription('Alvo').setRequired(true)).addIntegerOption(valorOpt()),
   new SlashCommandBuilder().setName('removemoney').setDescription('[DONO] Remove dinheiro de um usuário').addUserOption(o => o.setName('usuario').setDescription('Alvo').setRequired(true)).addIntegerOption(valorOpt()),
@@ -187,14 +188,14 @@ const economySlashCommands = [
   )),
   new SlashCommandBuilder().setName('negocios').setDescription('Compra negócios que rendem dinheiro por hora'),
   new SlashCommandBuilder().setName('coletar').setDescription('Coleta o rendimento acumulado dos teus negócios'),
-  new SlashCommandBuilder().setName('caixa').setDescription('Abre uma caixa misteriosa por R$ 50.000'),
+  new SlashCommandBuilder().setName('caixa').setDescription('Abre uma caixa misteriosa por 🪙 50.000'),
   new SlashCommandBuilder().setName('blackjack').setDescription('Joga blackjack contra o dealer').addIntegerOption(valorOpt('Aposta'))
 ];
 
 /* ============================================================
  *  DADOS
  * ============================================================ */
-const ecoStore = new JsonStore('economy_data.json');
+const ecoStore = new JsonStore('economy_data.json', { pretty: false });
 const data = ecoStore.data;
 const saveEcoData = () => ecoStore.save();
 
@@ -211,9 +212,12 @@ const ACCOUNT_TEMPLATE = {
   debt: 0,
   cooldowns: {},
   vips: [],
+  customRoles: {},
+  rolePasses: {},
   profession: 'entregador',
   businesses: {},
-  lastCollect: 0
+  lastCollect: 0,
+  protectedUntil: 0
 };
 
 function getUserAccount(userId) {
@@ -230,12 +234,33 @@ function addExtrato(acc, texto) {
   if (acc.extrato.length > 10) acc.extrato.length = 10;
 }
 
-const fmt = (n) => `R$ ${Math.floor(n).toLocaleString('pt-BR')}`;
+const fmt = (n) => `🪙 ${Math.floor(n).toLocaleString('pt-BR')}`;
 const credit = (acc, value) => { acc.wallet = Math.min(MAX_BALANCE, acc.wallet + Math.floor(value)); };
 const has = (acc, nome) => acc.inventory.includes(nome);
 const luck = (acc) => (has(acc, 'Amuleto da Sorte') ? ECONOMY.gamble.luckBonus : 0);
 const netWorth = (acc) => (acc.wallet || 0) + (acc.bank || 0) - (acc.debt || 0);
 const ITEM_LIST = Object.values(ITEMS);
+
+/** Recebe um ganho; se há dívida, uma parte vai direto para pagá-la. Devolve quanto foi para a dívida. */
+function earn(acc, valor) {
+  const pago = acc.debt > 0 ? Math.min(acc.debt, Math.floor(valor * ECONOMY.loan.garnish)) : 0;
+  if (pago > 0) acc.debt -= pago;
+  credit(acc, valor - pago);
+  return pago;
+}
+const debtNote = (pago) => (pago > 0 ? `\n🏦 ${fmt(pago)} (${Math.round(ECONOMY.loan.garnish * 100)}%) foram direto para pagar a sua dívida.` : '');
+
+/** Debita da carteira e, se faltar, do banco. Devolve false se o total não chega. */
+function chargeUser(userId, valor, nota) {
+  const acc = getUserAccount(userId);
+  if (acc.wallet + acc.bank < valor) return false;
+  const daCarteira = Math.min(acc.wallet, valor);
+  acc.wallet -= daCarteira;
+  acc.bank -= valor - daCarteira;
+  if (nota) addExtrato(acc, `${nota} (-${fmt(valor)})`);
+  saveEcoData();
+  return true;
+}
 
 /** Lê o "valor" do comando. Pelo prefixo aceita "tudo" e "metade" (relativos a `max`). */
 function resolveAmount(interaction, max) {
@@ -368,13 +393,14 @@ function startEconomyScheduler(client) {
 /* ============================================================
  *  BOTÕES
  * ============================================================ */
+/** Devolve null se ainda não deu 24h; senão, quanto do prémio foi para a dívida (0 se não há dívida). */
 function claimDaily(acc, now, origem = '') {
-  if (now - acc.lastDaily < DAY) return false;
-  credit(acc, ECONOMY.daily);
+  if (now - acc.lastDaily < DAY) return null;
+  const pago = earn(acc, ECONOMY.daily);
   acc.lastDaily = now;
   addExtrato(acc, `Resgatou o Daily${origem} (${fmt(ECONOMY.daily)})`);
   saveEcoData();
-  return true;
+  return pago;
 }
 
 async function buyItem(interaction, acc, itemId) {
@@ -415,11 +441,12 @@ async function buyItem(interaction, acc, itemId) {
 
 async function handleButton(interaction) {
   const id = interaction.customId;
-  if (!['eco_', 'buy_', 'bj_', 'biz_'].some((prefix) => id.startsWith(prefix))) return;
+  if (!['eco_', 'buy_', 'bj_', 'biz_', 'duel_'].some((prefix) => id.startsWith(prefix))) return;
 
   const acc = getUserAccount(interaction.user.id);
   const now = Date.now();
 
+  if (id.startsWith('duel_')) return handleDuelButton(interaction);
   if (id.startsWith('bj_')) return handleBlackjackButton(interaction);
   if (id.startsWith('biz_')) return buyBusiness(interaction, acc, id.slice(4), now);
   if (id.startsWith('buy_')) return buyItem(interaction, acc, id.slice(4));
@@ -437,8 +464,9 @@ async function handleButton(interaction) {
     return interaction.reply(eph(`🏦 **Poupança:** Tens ${fmt(acc.bank)} guardados no banco.`));
   }
   if (id === 'eco_btn_daily') {
-    if (!claimDaily(acc, now, ' via Painel')) return interaction.reply(eph(`⏳ Já resgataste o teu daily hoje! Volta <t:${unix(acc.lastDaily + DAY)}:R>.`));
-    return interaction.reply(eph(`🎁 Resgataste o teu daily de **${fmt(ECONOMY.daily)}**!`));
+    const pago = claimDaily(acc, now, ' via Painel');
+    if (pago === null) return interaction.reply(eph(`⏳ Você já resgatou o daily hoje! Volte <t:${unix(acc.lastDaily + DAY)}:R>.`));
+    return interaction.reply(eph(`🎁 Você resgatou o daily de **${fmt(ECONOMY.daily)}**!${debtNote(pago)}`));
   }
 }
 
@@ -452,11 +480,11 @@ function activityCommand(name) {
     if (rest > 0) return interaction.reply(eph(waitMsg(rest)));
     startCd(acc, name, now);
     const ganho = Math.floor(randInt(act.min, act.max) * incomeMultiplier(acc));
-    credit(acc, ganho);
+    const pago = earn(acc, ganho);
     addExtrato(acc, `${name}: +${fmt(ganho)}`);
     saveEcoData();
     const frase = act.frases[randInt(0, act.frases.length - 1)];
-    return interaction.reply(`${act.emoji} ${frase} e obtiveste um lucro de **${fmt(ganho)}**!`);
+    return interaction.reply(`${act.emoji} ${frase} e obteve um lucro de **${fmt(ganho)}**!${debtNote(pago)}`);
   };
 }
 
@@ -473,7 +501,7 @@ const COMMANDS = {
     const alvoAcc = getUserAccount(alvo.id);
     const embed = new EmbedBuilder()
       .setColor(0x2ECC71)
-      .setTitle(`💳 Património de ${alvo.tag}`)
+      .setTitle(`💳 Património de ${alvo.tag} (ZapherCoin)`)
       .addFields(
         { name: '💵 Carteira', value: fmt(alvoAcc.wallet), inline: true },
         { name: '🏦 Banco', value: fmt(alvoAcc.bank), inline: true }
@@ -539,16 +567,27 @@ const COMMANDS = {
   },
 
   async rank(interaction) {
-    const sorted = Object.entries(data)
+    const ordenados = Object.entries(data)
       .map(([id, a]) => ({ id, total: netWorth(a) }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 10);
-    if (sorted.length === 0) return interaction.reply(eph('📊 Sem registros.'));
+      .sort((a, b) => b.total - a.total);
+
+    let sorted = ordenados.slice(0, 10);
+    if (interaction.guild) {
+      // A economia é global entre servidores: mostra só quem está NESTE servidor
+      await interaction.deferReply();
+      sorted = [];
+      for (let i = 0; i < ordenados.length && i < 250 && sorted.length < 10; i += 25) {
+        const lote = ordenados.slice(i, i + 25);
+        const membros = await interaction.guild.members.fetch({ user: lote.map((x) => x.id) }).catch(() => null);
+        for (const item of lote) if (membros?.has(item.id) && sorted.length < 10) sorted.push(item);
+      }
+    }
+    if (sorted.length === 0) return respond(interaction, eph('📊 Sem registros.'));
     const desc = sorted.map((item, i) => {
       const med = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `**#${i + 1}**`;
       return `${med} <@${item.id}> — **${fmt(item.total)}**`;
     }).join('\n');
-    return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xF1C40F).setTitle('🏆 Top 10 Mais Ricos').setDescription(desc)], allowedMentions: { parse: [] } });
+    return respond(interaction, { embeds: [new EmbedBuilder().setColor(0xF1C40F).setTitle('🏆 Top 10 Mais Ricos').setDescription(desc)], allowedMentions: { parse: [] } });
   },
 
   async extrato(interaction, acc) {
@@ -557,18 +596,19 @@ const COMMANDS = {
   },
 
   async daily(interaction, acc, now) {
-    if (!claimDaily(acc, now)) return interaction.reply(eph(`⏳ Já resgataste o teu daily hoje! Volta <t:${unix(acc.lastDaily + DAY)}:R>.`));
-    return interaction.reply(`🎁 Resgataste o teu daily de **${fmt(ECONOMY.daily)}**!`);
+    const pago = claimDaily(acc, now);
+    if (pago === null) return interaction.reply(eph(`⏳ Você já resgatou o daily hoje! Volte <t:${unix(acc.lastDaily + DAY)}:R>.`));
+    return interaction.reply(`🎁 Você resgatou o daily de **${fmt(ECONOMY.daily)}**!${debtNote(pago)}`);
   },
 
   async weekly(interaction, acc, now) {
     const semana = 7 * DAY;
     if (now - acc.lastWeekly < semana) return interaction.reply(eph(`⏳ Já resgataste o teu bónus semanal! Volta <t:${unix(acc.lastWeekly + semana)}:R>.`));
-    credit(acc, ECONOMY.weekly);
+    const pago = earn(acc, ECONOMY.weekly);
     acc.lastWeekly = now;
     addExtrato(acc, `Resgatou o Weekly (${fmt(ECONOMY.weekly)})`);
     saveEcoData();
-    return interaction.reply(`🎁 Resgataste o teu bónus semanal de **${fmt(ECONOMY.weekly)}**!`);
+    return interaction.reply(`🎁 Você resgatou o bônus semanal de **${fmt(ECONOMY.weekly)}**!${debtNote(pago)}`);
   },
 
   async trabalhar(interaction, acc, now) {
@@ -577,7 +617,7 @@ const COMMANDS = {
     acc.lastWork = now;
     const prof = PROFESSIONS[acc.profession] || PROFESSIONS.entregador;
     const ganho = Math.floor(randInt(ECONOMY.workMin, ECONOMY.workMax) * incomeMultiplier(acc) * prof.mult);
-    credit(acc, ganho);
+    const pago = earn(acc, ganho);
     let extra = '';
     if (Math.random() < ECONOMY.levelUpChance) {
       acc.jobLevel += 1;
@@ -585,7 +625,7 @@ const COMMANDS = {
     }
     addExtrato(acc, `Trabalhou e ganhou ${fmt(ganho)}`);
     saveEcoData();
-    return interaction.reply(`${prof.emoji} Trabalhaste como **${prof.nome}** e ganhaste **${fmt(ganho)}**!${extra}`);
+    return interaction.reply(`${prof.emoji} Você trabalhou como **${prof.nome}** e ganhou **${fmt(ganho)}**!${extra}${debtNote(pago)}`);
   },
 
   async roubar(interaction, acc, now) {
@@ -596,7 +636,8 @@ const COMMANDS = {
     if (rest > 0) return interaction.reply(eph(waitMsg(rest)));
 
     const alvoAcc = getUserAccount(alvo.id);
-    if (alvoAcc.wallet < ECONOMY.rob.minTarget) return interaction.reply(eph(`❌ ${alvo.tag} tem a carteira quase vazia, não compensa.`));
+    if (alvoAcc.protectedUntil > now) return interaction.reply(eph(`🛡️ ${alvo.tag} foi roubado há pouco e está protegido <t:${unix(alvoAcc.protectedUntil)}:R>.`));
+    if (alvoAcc.wallet < ECONOMY.rob.minTarget) return interaction.reply(eph(`❌ ${alvo.tag} está com a carteira quase vazia, não compensa.`));
     startCd(acc, 'roubar', now);
 
     const chance = ECONOMY.rob.baseChance + (has(acc, 'Kit Tatico Leve') ? 0.05 : 0) + (has(acc, 'Kit Tatico Pesado') ? 0.12 : 0) + luck(acc);
@@ -604,6 +645,7 @@ const COMMANDS = {
       const pct = ECONOMY.rob.minPct + Math.random() * (ECONOMY.rob.maxPct - ECONOMY.rob.minPct);
       const roubado = Math.min(ECONOMY.rob.cap, Math.max(1, Math.floor(alvoAcc.wallet * pct)));
       alvoAcc.wallet -= roubado;
+      alvoAcc.protectedUntil = now + 10 * MINUTE;
       credit(acc, roubado);
       addExtrato(acc, `Roubou ${fmt(roubado)} de ${alvo.tag}`);
       addExtrato(alvoAcc, `Foi roubado em ${fmt(roubado)} por ${interaction.user.tag}`);
@@ -645,6 +687,8 @@ const COMMANDS = {
   async apostar(interaction, acc) {
     const valor = resolveAmount(interaction, acc.wallet);
     if (valor <= 0 || valor > acc.wallet) return interaction.reply(eph('❌ Saldo insuficiente na carteira.'));
+    const oponente = interaction.options.getUser('usuario');
+    if (oponente) return startDuel(interaction, acc, oponente, valor); // /apostar valor @pessoa = duelo 50/50
     if (Math.random() < ECONOMY.gamble.winChance + luck(acc)) {
       credit(acc, valor);
       saveEcoData();
@@ -751,7 +795,7 @@ const COMMANDS = {
     if (acc.wallet < price) return interaction.reply(eph(`❌ Cada bilhete de loteria custa ${fmt(price)}.`));
     acc.wallet -= price;
 
-    if (Math.random() < chance + luck(acc) / 3) {
+    if (Math.random() < chance + luck(acc) / 10) {
       credit(acc, prize);
       addExtrato(acc, `Ganhou na Loteria (${fmt(prize)})`);
       saveEcoData();
@@ -874,6 +918,65 @@ async function buyBusiness(interaction, acc, id, now) {
   return interaction.reply(eph(`✅ Compraste **${b.nome}** ${b.emoji} por **${fmt(b.preco)}**!${pendente > 0 ? `\n💰 Também coletei ${fmt(pendente)} que já tinhas acumulado.` : ''}`));
 }
 
+/* ---------- Duelo entre jogadores (/apostar valor @pessoa) ---------- */
+const DUEL_FEE = 0.05; // 5% do valor some (taxa da casa)
+const duelsDone = new Set();
+
+async function startDuel(interaction, acc, oponente, valor) {
+  if (oponente.id === interaction.user.id) return interaction.reply(eph('❌ Você não pode duelar contra si mesmo.'));
+  if (oponente.bot) return interaction.reply(eph('❌ Bots não duelam.'));
+  const alvoAcc = getUserAccount(oponente.id);
+  if (alvoAcc.wallet < valor) return interaction.reply(eph(`❌ ${oponente.tag} não tem ${fmt(valor)} na carteira para cobrir a aposta.`));
+
+  const dados = `${interaction.user.id}:${oponente.id}:${valor}`;
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`duel_y:${dados}`).setLabel('Aceitar duelo').setEmoji('⚔️').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(`duel_n:${dados}`).setLabel('Recusar').setStyle(ButtonStyle.Secondary)
+  );
+  await interaction.reply({
+    content: `⚔️ <@${oponente.id}>, <@${interaction.user.id}> desafiou você para um duelo valendo **${fmt(valor)}**! (vale por 60 segundos)`,
+    components: [row],
+    allowedMentions: { users: [oponente.id] }
+  });
+  const msg = await interaction.fetchReply().catch(() => null);
+  if (msg) {
+    setTimeout(() => {
+      if (duelsDone.has(msg.id)) return;
+      duelsDone.add(msg.id);
+      msg.edit({ content: '⌛ O duelo expirou.', components: [] }).catch(() => {});
+    }, 60000);
+  }
+}
+
+async function handleDuelButton(interaction) {
+  const [kind, desafianteId, alvoId, valorTxt] = interaction.customId.split(':');
+  const valor = Number(valorTxt);
+  if (interaction.user.id !== alvoId) return interaction.reply(eph('❌ Só quem foi desafiado pode responder.'));
+  if (duelsDone.has(interaction.message.id)) return interaction.reply(eph('⌛ Este duelo já terminou.'));
+  duelsDone.add(interaction.message.id);
+
+  if (kind === 'duel_n') return interaction.update({ content: `🏳️ <@${alvoId}> recusou o duelo.`, components: [], allowedMentions: { parse: [] } });
+
+  const a = getUserAccount(desafianteId);
+  const b = getUserAccount(alvoId);
+  if (a.wallet < valor || b.wallet < valor) {
+    return interaction.update({ content: '❌ Alguém não tem mais saldo suficiente. Duelo cancelado.', components: [] });
+  }
+  const venceuDesafiante = Math.random() < 0.5;
+  const [vencedor, perdedor, vencedorId, perdedorId] = venceuDesafiante ? [a, b, desafianteId, alvoId] : [b, a, alvoId, desafianteId];
+  const ganho = Math.floor(valor * (1 - DUEL_FEE));
+  perdedor.wallet -= valor;
+  credit(vencedor, ganho);
+  addExtrato(vencedor, `Venceu um duelo: +${fmt(ganho)}`);
+  addExtrato(perdedor, `Perdeu um duelo: -${fmt(valor)}`);
+  saveEcoData();
+  return interaction.update({
+    content: `⚔️ **Duelo!** <@${vencedorId}> venceu <@${perdedorId}> e levou **${fmt(ganho)}** (taxa de ${Math.round(DUEL_FEE * 100)}%)!`,
+    components: [],
+    allowedMentions: { users: [vencedorId, perdedorId] }
+  });
+}
+
 async function handleAutocomplete(interaction) {
   if (interaction.commandName !== 'vender') return;
   const acc = getUserAccount(interaction.user.id);
@@ -953,11 +1056,11 @@ Object.assign(COMMANDS, {
     if (businessRate(acc) <= 0) return interaction.reply(eph('❌ Não tens nenhum negócio. Compra um em `/negocios`.'));
     const valor = pendingBusiness(acc, now);
     if (valor < 1) return interaction.reply(eph('⏳ Os teus negócios ainda não produziram nada. Volta daqui a pouco.'));
-    credit(acc, valor);
+    const pago = earn(acc, valor);
     acc.lastCollect = now;
     addExtrato(acc, `Coletou ${fmt(valor)} dos negócios`);
     saveEcoData();
-    return interaction.reply(`🏭 Coletaste **${fmt(valor)}** dos teus negócios!`);
+    return interaction.reply(`🏭 Você coletou **${fmt(valor)}** dos seus negócios!${debtNote(pago)}`);
   },
 
   async caixa(interaction, acc) {
@@ -1018,11 +1121,10 @@ function inventoryText(acc) {
 }
 
 async function adminMoney(interaction, adicionar) {
-  const { user, options } = interaction;
-  const isAdmin = interaction.memberPermissions?.has('Administrator');
-  if ((!CREATOR_ID || user.id !== CREATOR_ID) && !isAdmin) {
-    return interaction.reply(eph('❌ Apenas o criador do bot ou administradores podem usar este comando.'));
-  }
+  const { options } = interaction;
+  // A economia é global entre servidores: só o dono do bot pode criar/remover dinheiro
+  const negado = checkAccess(interaction, { strict: true });
+  if (negado) return interaction.reply(eph(negado));
   const alvo = options.getUser('usuario');
   const valor = options.getInteger('valor');
   if (valor <= 0) return interaction.reply(eph('❌ Valor inválido.'));
@@ -1054,8 +1156,8 @@ async function handleEconomyInteraction(interaction) {
     if (interaction.isChatInputCommand()) return await handleCommand(interaction);
   } catch (err) {
     console.error('[interação/economia]', err);
-    try { await respond(interaction, eph('❌ Ocorreu um erro inesperado ao executar isso.')); } catch (_) { /* ignora */ }
+    try { const aviso = describeError(err); if (aviso) await respond(interaction, eph(aviso)); } catch (_) { /* ignora */ }
   }
 }
 
-module.exports = { economySlashCommands, handledCommands, handleEconomyInteraction, startEconomyScheduler, giveMoney };
+module.exports = { economySlashCommands, handledCommands, handleEconomyInteraction, startEconomyScheduler, giveMoney, chargeUser, getUserAccount, saveEcoData, fmt };

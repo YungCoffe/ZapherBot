@@ -8,6 +8,7 @@ const DATA_DIR = process.env.DATA_DIR || '.';
 try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (_) { /* ignora */ }
 
 const stores = new Set();
+const byFile = new Map(); // nome do arquivo -> store (usado pelo /backup)
 
 /**
  * Armazena um JSON em disco com:
@@ -17,13 +18,17 @@ const stores = new Set();
  *  - backup automático se o arquivo estiver corrompido
  */
 class JsonStore {
-  constructor(fileName, { fallback = {}, migrate = null, delay = 500 } = {}) {
+  constructor(fileName, { fallback = {}, migrate = null, delay = 500, pretty = true } = {}) {
+    this.fileName = fileName;
+    this.migrate = migrate;
+    this.pretty = pretty;
     this.file = path.join(DATA_DIR, fileName);
     this.delay = delay;
     this.timer = null;
     this.dirty = false;
     this.data = this._load(fallback, migrate);
     stores.add(this);
+    byFile.set(fileName, this);
   }
 
   _load(fallback, migrate) {
@@ -40,6 +45,17 @@ class JsonStore {
       try { fs.copyFileSync(this.file, `${this.file}.corrompido-${Date.now()}`); } catch (_) { /* ignora */ }
     }
     return fallback;
+  }
+
+  /**
+   * Substitui o conteúdo SEM trocar o objeto (outros módulos guardam referência a store.data).
+   * Usado pelo /backup restaurar.
+   */
+  replace(newData) {
+    const novo = this.migrate ? this.migrate(newData) : newData;
+    for (const key of Object.keys(this.data)) delete this.data[key];
+    Object.assign(this.data, novo);
+    this.save();
   }
 
   save() {
@@ -60,7 +76,7 @@ class JsonStore {
     this.dirty = false;
     const tmp = `${this.file}.tmp`;
     try {
-      fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2), 'utf8');
+      fs.writeFileSync(tmp, this.pretty ? JSON.stringify(this.data, null, 2) : JSON.stringify(this.data), 'utf8');
       fs.renameSync(tmp, this.file);
     } catch (err) {
       this.dirty = true;
@@ -73,6 +89,9 @@ function flushAll() {
   for (const store of stores) store.flush();
 }
 
+const listStores = () => [...byFile.values()];
+const getStore = (fileName) => byFile.get(fileName) || null;
+
 process.on('exit', flushAll);
 
-module.exports = { JsonStore, flushAll, DATA_DIR };
+module.exports = { JsonStore, flushAll, listStores, getStore, DATA_DIR };
