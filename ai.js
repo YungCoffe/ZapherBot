@@ -65,7 +65,7 @@ function registerUse(userId, { hoje, usadas }) {
  * ============================================================ */
 async function askGemini(pergunta) {
   try {
-    const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL}:generateContent?key=${API_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
     
     const res = await fetch(url, {
       method: 'POST',
