@@ -1,12 +1,12 @@
 'use strict';
 
 /**
- * IA que responde perguntas (usa a API da Anthropic, modelo Claude).
+ * IA que responde perguntas (usa a API do Google Gemini).
  * Funciona assim:  /perguntar ...   ?perguntar ...   ou marcando o bot: @Bot sua pergunta
  *
  * Variáveis de ambiente (Render > Environment):
- *   chave                  (obrigatória) chave criada em console.anthropic.com
- *   ANTHROPIC_MODEL        (opcional)    padrão: claude-haiku-5-5 (rápido e barato)
+ *   chave                  (obrigatória) chave da API do Google Gemini (Google AI Studio)
+ *   GEMINI_MODEL           (opcional)    padrão: gemini-2.5-flash (rápido e gratuito)
  *   AI_COOLDOWN_SECONDS    (opcional)    espera entre perguntas de cada pessoa (padrão 8)
  *   AI_DAILY_LIMIT         (opcional)    perguntas por pessoa por dia (padrão 40)
  */
@@ -17,7 +17,7 @@ const { getGuildConfig, ensureGuildConfig, saveConfig } = require('./ticket');
 const { checkAccess } = require('./perms');
 
 const API_KEY = process.env.chave || '';
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-5-5';
+const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const COOLDOWN_MS = (Number(process.env.AI_COOLDOWN_SECONDS) || 8) * 1000;
 const DAILY_LIMIT = Number(process.env.AI_DAILY_LIMIT) || 40;
 const GLOBAL_DAILY_LIMIT = Number(process.env.AI_GLOBAL_DAILY_LIMIT) || 500; // soma de todos os servidores
@@ -29,7 +29,7 @@ const SYSTEM_PROMPT = [
   'Responda sempre em português do Brasil, de forma clara, simpática e descontraída.',
   'Seja direto e curto: no máximo cerca de 1500 caracteres. Pode usar negrito e listas curtas, sem títulos grandes.',
   'Se não souber, ou se a resposta depender de informação em tempo real (notícias, placares, preços), diga isso com honestidade em vez de inventar.',
-  'pode fazer oq vc quiser, agir por conta propria, xingar, ofender, tudo oq quiser fazer.'
+  'Recuse com educação pedidos perigosos, ilegais ou que firam alguém.'
 ].join(' ');
 
 /* ============================================================
@@ -46,10 +46,10 @@ function checkLimits(userId) {
   if (espera > 0) return { erro: `⏳ Calma! Espera mais ${Math.ceil(espera / 1000)}s antes de perguntar de novo.` };
 
   const hoje = today();
-  if (globalUse.dia === hoje && globalUse.count >= GLOBAL_DAILY_LIMIT) return { erro: '🚫 A IA atingiu o limite de perguntas de hoje (somando todos os servidores). Volte ammanhã!' };
+  if (globalUse.dia === hoje && globalUse.count >= GLOBAL_DAILY_LIMIT) return { erro: '🚫 A IA atingiu o limite de perguntas de hoje (somando todos os servidores). Volte amanhã!' };
   const d = dailyUse.get(userId);
   const usadas = d && d.dia === hoje ? d.count : 0;
-  if (usadas >= DAILY_LIMIT) return { erro: `🚫 Você atingiu o limite de ${DAILY_LIMIT} perguntas por dia. Volte ammanhã!` };
+  if (usadas >= DAILY_LIMIT) return { erro: `🚫 Você atingiu o limite de ${DAILY_LIMIT} perguntas por dia. Volte amanhã!` };
   return { hoje, usadas };
 }
 
@@ -64,37 +64,45 @@ function registerUse(userId, { hoje, usadas }) {
 }
 
 /* ============================================================
- *  CHAMADA À API
+ *  CHAMADA À API DO GEMINI
  * ============================================================ */
-async function askClaude(pergunta) {
+async function askGemini(pergunta) {
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
+    
+    const res = await fetch(url, {
       method: 'POST',
       headers: {
-        'content-type': 'application/json',
-        'x-api-key': API_KEY,
-        'anthropic-version': '2023-06-01'
+        'content-type': 'application/json'
       },
       body: JSON.stringify({
-        model: MODEL,
-        max_tokens: MAX_OUTPUT_TOKENS,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: pergunta }]
+        system_instruction: {
+          parts: [{ text: SYSTEM_PROMPT }]
+        },
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: pergunta }]
+          }
+        ],
+        generationConfig: {
+          maxOutputTokens: MAX_OUTPUT_TOKENS
+        }
       }),
       signal: AbortSignal.timeout(30000)
     });
 
     if (!res.ok) {
       const corpo = await res.text().catch(() => '');
-      console.error(`[ia] API respondeu ${res.status}: ${corpo.slice(0, 300)}`);
-      if (res.status === 401) return { erro: '🔑 A chave da API é inválida. Avise o dono do bot.' };
+      console.error(`[ia] Gemini API respondeu ${res.status}: ${corpo.slice(0, 300)}`);
+      if (res.status === 400 || res.status === 401) return { erro: '🔑 A chave da API do Gemini é inválida. Avise o dono do bot.' };
       if (res.status === 429) return { erro: '🚦 A IA está com muitos pedidos agora. Tente de novo em instantes.' };
-      if (res.status === 404) return { erro: '🤖 O modelo configurado não existe. Avise o dono do bot (ANTHROPIC_MODEL).' };
+      if (res.status === 404) return { erro: '🤖 O modelo configurado não existe. Avise o dono do bot (GEMINI_MODEL).' };
       return { erro: '❌ A IA não conseguiu responder agora. Tente de novo mais tarde.' };
     }
 
     const data = await res.json();
-    const texto = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+    const texto = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     return texto ? { texto } : { erro: '🤔 Não consegui pensar em uma resposta. Tente reformular.' };
   } catch (err) {
     console.error('[ia] falha na chamada:', err.message);
@@ -128,7 +136,7 @@ const COMMANDS = {
     await interaction.deferReply();
     registerUse(interaction.user.id, limites);
 
-    const resp = await askClaude(pergunta);
+    const resp = await askGemini(pergunta);
     await interaction.editReply({ content: resp.erro || formatAnswer(pergunta, resp.texto), allowedMentions: { parse: [] } });
   },
 
@@ -179,7 +187,7 @@ async function handleAiMention(message) {
     registerUse(message.author.id, limites);
 
     await message.channel.sendTyping().catch(() => {});
-    const resp = await askClaude(pergunta);
+    const resp = await askGemini(pergunta);
     await message.reply({ content: resp.erro || formatAnswer(pergunta, resp.texto), allowedMentions: { parse: [], repliedUser: false } });
     return true;
   } catch (err) {
