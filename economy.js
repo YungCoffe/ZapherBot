@@ -248,6 +248,14 @@ function earn(acc, valor) {
   credit(acc, valor - pago);
   return pago;
 }
+/** Dá um ganho a um usuário (parte vai para a dívida, se houver). Devolve quanto foi para a dívida. */
+function earnMoney(userId, valor, nota) {
+  const acc = getUserAccount(userId);
+  const pago = earn(acc, valor);
+  if (nota) addExtrato(acc, `${nota} (+${fmt(valor)})`);
+  saveEcoData();
+  return pago;
+}
 const debtNote = (pago) => (pago > 0 ? `\n🏦 ${fmt(pago)} (${Math.round(ECONOMY.loan.garnish * 100)}%) foram direto para pagar a sua dívida.` : '');
 
 /** Debita da carteira e, se faltar, do banco. Devolve false se o total não chega. */
@@ -1160,4 +1168,4 @@ async function handleEconomyInteraction(interaction) {
   }
 }
 
-module.exports = { economySlashCommands, handledCommands, handleEconomyInteraction, startEconomyScheduler, giveMoney, chargeUser, getUserAccount, saveEcoData, fmt };
+module.exports = { economySlashCommands, handledCommands, handleEconomyInteraction, startEconomyScheduler, giveMoney, earnMoney, chargeUser, getUserAccount, saveEcoData, fmt };

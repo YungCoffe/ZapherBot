@@ -21,7 +21,7 @@ const BALL_ANSWERS = [
 /* ============================================================
  *  DADOS
  * ============================================================ */
-const remindersStore = new JsonStore('reminders.json');
+const remindersStore = new JsonStore('reminders.json', { init: (d) => { d.items ??= []; } });
 remindersStore.data.items ??= [];
 
 /* ============================================================

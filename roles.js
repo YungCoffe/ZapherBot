@@ -13,7 +13,7 @@
 
 const {
   ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
-  PermissionFlagsBits, SlashCommandBuilder
+  PermissionFlagsBits, PermissionsBitField, SlashCommandBuilder
 } = require('discord.js');
 const { EPHEMERAL, CURRENCY_NAME, eph, normalize, respond, parseColor, placeRoleBelow, describeError } = require('./utils');
 const { getUserAccount, saveEcoData, chargeUser, fmt } = require('./economy');
@@ -41,6 +41,10 @@ const BASIC_PERMISSIONS = [
   PermissionFlagsBits.ChangeNickname
 ];
 
+const BASIC_BITFIELD = new PermissionsBitField(BASIC_PERMISSIONS).bitfield;
+/** Nomes que imitariam a staff ou chamariam atenção indevida. */
+const BLOCKED_WORDS = ['admin', 'administrador', 'adm', 'moderador', 'mod', 'staff', 'dono', 'owner', 'everyone', 'here', 'suporte', 'bot'];
+
 /* ============================================================
  *  PAINEL
  * ============================================================ */
@@ -64,13 +68,15 @@ function panelMessage() {
       '2️⃣ Escolha o **nome** e a **cor** (ex.: `#FF8800`, `azul`, `roxo`)',
       '3️⃣ Pronto! O cargo é criado e entregue na hora',
       '',
-      '**Permissões do cargo:** simples e seguras — ler e escrever, **enviar imagens e arquivos**, links, reações, emojis, entrar e falar em canais de voz.'
+      '**Permissões do cargo:** simples e seguras — ler e escrever, **enviar imagens e arquivos**, links, reações, emojis, entrar e falar em canais de voz.',
+      '🔒 Você só consegue mexer no **seu próprio cargo** (nome e cor). Ele nunca recebe permissão de administração.'
     ].join('\n'))
     .setFooter({ text: 'Cada pessoa pode ter 1 cargo personalizado • Editar nome/cor é grátis' });
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('role_create').setLabel(`Criar meu cargo (${fmt(ROLE_PRICE)})`).setStyle(ButtonStyle.Success).setEmoji('🎨'),
-    new ButtonBuilder().setCustomId('role_edit').setLabel('Editar meu cargo').setStyle(ButtonStyle.Secondary).setEmoji('✏️')
+    new ButtonBuilder().setCustomId('role_edit').setLabel('Editar meu cargo').setStyle(ButtonStyle.Secondary).setEmoji('✏️'),
+    new ButtonBuilder().setCustomId('role_delete').setLabel('Apagar meu cargo').setStyle(ButtonStyle.Danger).setEmoji('🗑️')
   );
   return { embeds: [embed], components: [row] };
 }
@@ -83,6 +89,7 @@ const sanitizeName = (text) => String(text ?? '').replace(/[@`\n\r]/g, '').repla
 function validate(guild, nome, cor, ignoreRoleId = null) {
   if (nome.length < 2 || nome.length > 32) return '❌ O nome precisa ter entre 2 e 32 caracteres (sem @).';
   if (cor === null) return '❌ Cor inválida. Use um código (`#FF8800`) ou o nome de uma cor (`vermelho`, `azul`, `roxo`, `rosa`...).';
+  if (normalize(nome).split(/[^a-z0-9]+/).some((w) => BLOCKED_WORDS.includes(w))) return '❌ Esse nome não é permitido (parece um cargo da staff ou do sistema). Escolha outro.';
   const igual = guild.roles.cache.find((r) => r.id !== ignoreRoleId && normalize(r.name) === normalize(nome));
   if (igual) return '❌ Já existe um cargo com esse nome. Escolha outro.';
   return null;
@@ -104,11 +111,17 @@ function buildModal(customId, title, nome = '', cor = '') {
 }
 
 /** Cargo personalizado atual da pessoa neste servidor (ou null se não existir mais). */
-function ownRole(guild, acc) {
+function ownRole(guild, acc, member = null) {
   const id = acc.customRoles[guild.id];
   const role = id ? guild.roles.cache.get(id) : null;
-  if (id && !role) { delete acc.customRoles[guild.id]; saveEcoData(); }
-  return role;
+  if (role) return role;
+  if (id) { delete acc.customRoles[guild.id]; saveEcoData(); }
+
+  // Recuperação: se o registro se perdeu (ex.: dados apagados numa atualização) mas a pessoa ainda tem
+  // um cargo com exatamente as permissões que o bot dá, e só ela o usa, ele é o cargo dela.
+  const candidato = [...(member?.roles?.cache?.values?.() ?? [])].find((r) => !r.managed && r.id !== guild.id && r.permissions?.bitfield === BASIC_BITFIELD && r.members?.size === 1);
+  if (candidato) { acc.customRoles[guild.id] = candidato.id; saveEcoData(); return candidato; }
+  return null;
 }
 
 /* ============================================================
@@ -119,7 +132,7 @@ async function onCreateClick(interaction) {
   if (!guild) return interaction.reply(eph('❌ Isto só funciona dentro de um servidor.'));
   const acc = getUserAccount(user.id);
 
-  const atual = ownRole(guild, acc);
+  const atual = ownRole(guild, acc, interaction.member);
   if (atual) return interaction.reply({ content: `❌ Você já tem um cargo personalizado: <@&${atual.id}>. Use **✏️ Editar meu cargo** para mudar nome ou cor.`, flags: EPHEMERAL, allowedMentions: { parse: [] } });
 
   if (!acc.rolePasses[guild.id]) {
@@ -140,9 +153,38 @@ async function onCreateClick(interaction) {
 async function onEditClick(interaction) {
   const { guild, user } = interaction;
   if (!guild) return interaction.reply(eph('❌ Isto só funciona dentro de um servidor.'));
-  const role = ownRole(guild, getUserAccount(user.id));
+  const role = ownRole(guild, getUserAccount(user.id), interaction.member);
   if (!role) return interaction.reply(eph('❌ Você ainda não tem um cargo personalizado. Clique em **Criar meu cargo**.'));
   return interaction.showModal(buildModal('role_modal_edit', 'Editar meu cargo', role.name, hexOf(role.color)));
+}
+
+async function onDeleteClick(interaction) {
+  const { guild, user } = interaction;
+  if (!guild) return interaction.reply(eph('❌ Isto só funciona dentro de um servidor.'));
+  const role = ownRole(guild, getUserAccount(user.id), interaction.member);
+  if (!role) return interaction.reply(eph('❌ Você não tem um cargo personalizado neste servidor.'));
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('role_delete_yes').setLabel('Sim, apagar meu cargo').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('role_delete_no').setLabel('Cancelar').setStyle(ButtonStyle.Secondary)
+  );
+  return interaction.reply({ content: `⚠️ Apagar <@&${role.id}>? **Não há reembolso** e, para ter outro cargo, será preciso pagar ${fmt(ROLE_PRICE)} de novo.`, components: [row], flags: EPHEMERAL, allowedMentions: { parse: [] } });
+}
+
+async function onDeleteConfirm(interaction) {
+  const { guild, user } = interaction;
+  if (interaction.customId === 'role_delete_no') return interaction.update({ content: '👍 Seu cargo foi mantido.', components: [] });
+  const acc = getUserAccount(user.id);
+  const role = ownRole(guild, acc, interaction.member); // só o próprio cargo da pessoa, nunca o de outra
+  if (!role) return interaction.update({ content: '❌ Você não tem um cargo personalizado.', components: [] });
+  try {
+    await role.delete(`Cargo personalizado apagado por ${user.tag}`);
+    delete acc.customRoles[guild.id];
+    saveEcoData();
+    return interaction.update({ content: '🗑️ Seu cargo foi apagado.', components: [] });
+  } catch (err) {
+    console.error('[cargo personalizado] apagar:', err);
+    return interaction.update({ content: '❌ Não consegui apagar o cargo agora.', components: [] });
+  }
 }
 
 /* ============================================================
@@ -193,7 +235,7 @@ async function onCreateSubmit(interaction) {
 async function onEditSubmit(interaction) {
   const { guild, user } = interaction;
   if (!guild) return;
-  const role = ownRole(guild, getUserAccount(user.id));
+  const role = ownRole(guild, getUserAccount(user.id), interaction.member);
   if (!role) return interaction.reply(eph('❌ Você não tem um cargo personalizado neste servidor.'));
 
   const nome = sanitizeName(interaction.fields.getTextInputValue('ti_nome'));
@@ -235,6 +277,8 @@ async function handleRolesInteraction(interaction) {
     if (interaction.isButton()) {
       if (interaction.customId === 'role_create') return await onCreateClick(interaction);
       if (interaction.customId === 'role_edit') return await onEditClick(interaction);
+      if (interaction.customId === 'role_delete') return await onDeleteClick(interaction);
+      if (interaction.customId === 'role_delete_yes' || interaction.customId === 'role_delete_no') return await onDeleteConfirm(interaction);
       return;
     }
 

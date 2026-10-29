@@ -2,7 +2,7 @@
 
 const {
   ChannelType, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder,
-  SlashCommandBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder
+  SlashCommandBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, AuditLogEvent
 } = require('discord.js');
 const { JsonStore } = require('./storage');
 const { isStaff, hasFullAccess, checkAccess } = require('./perms');
@@ -27,7 +27,11 @@ const configStore = new JsonStore('welcome_config.json', {
 });
 const warningsStore = new JsonStore('warnings.json');
 const censuraStore = new JsonStore('censura.json');
-const stateStore = new JsonStore('moderation_state.json');
+const stateStore = new JsonStore('moderation_state.json', {
+  init: (d) => {
+    d.tempBans ??= []; d.giveaways ??= []; d.calados ??= {}; d.permNicks ??= {}; d.ratings ??= {};
+  }
+});
 
 const state = stateStore.data;
 state.tempBans ??= [];
@@ -107,11 +111,31 @@ const LOG_NAMES = {
   saidas: 'Saída de membros',
   nivel: 'Avisos de subida de nível'
 };
+/** Canal de destino de cada categoria de log (ou null se nenhum estiver configurado). */
+function destinationOf(guild, key) {
+  const c = getGuildConfig(guild.id);
+  const map = {
+    apagadas: c.msgDeleteChannel || c.logsChannel, editadas: c.msgDeleteChannel || c.logsChannel,
+    punicoes: c.punicoesChannel || c.logsChannel, tickets: c.duvidasChannel || c.denunciasChannel || c.logsChannel,
+    entradas: c.welcomeChannel, saidas: c.welcomeChannel, nivel: c.levelChannel
+  };
+  return map[key] || null;
+}
+
 const TYPE_TOGGLE = { apagada: 'apagadas', editada: 'editadas', punicao: 'punicoes' };
 
 function logEnabled(guildId, key) {
   const t = getGuildConfig(guildId).logToggles;
   return t && key in t ? !!t[key] : LOG_DEFAULTS[key] !== false;
+}
+
+const botActions = new Map(); // "ban:servidor:usuario" -> expira (ações feitas pelos comandos do bot, já logadas)
+function markBotAction(tipo, guildId, userId) { botActions.set(`${tipo}:${guildId}:${userId}`, Date.now() + 30000); }
+function wasBotAction(tipo, guildId, userId) {
+  const k = `${tipo}:${guildId}:${userId}`;
+  const exp = botActions.get(k);
+  if (exp && exp > Date.now()) { botActions.delete(k); return true; }
+  return false;
 }
 
 const quietBulk = new Set(); // canais onde um /clear está apagando mensagens (não vai para o log)
@@ -144,7 +168,7 @@ function punishEmbed(titulo, cor, alvo, moderador, motivo, extra = []) {
     .setTitle(titulo)
     .addFields(
       { name: '👤 Usuário', value: `<@${alvo.id}> (${alvo.tag})`, inline: true },
-      { name: '🛡️ Staff', value: `<@${moderador.id}>`, inline: true },
+      { name: '🛡️ Staff', value: moderador?.id ? `<@${moderador.id}>` : 'Não identificado', inline: true },
       ...extra,
       { name: '📄 Motivo', value: truncate(motivo, 1000) }
     )
@@ -209,7 +233,7 @@ const allSlashCommands = [
   new SlashCommandBuilder().setName('setpunicoes').setDescription('Define o canal de logs de punições').addChannelOption(canalOpt('Canal')),
   new SlashCommandBuilder().setName('setmsgdelete').setDescription('Define o canal de logs para mensagens apagadas').addChannelOption(canalOpt('Canal')),
   new SlashCommandBuilder().setName('logs').setDescription('Liga/desliga cada tipo de log e aviso do bot (vazio = ver o que está ativo)')
-    .addStringOption(o => o.setName('categoria').setDescription('Qual log').setRequired(false).addChoices(...Object.entries(LOG_NAMES).map(([value, name]) => ({ name, value }))))
+    .addStringOption(o => o.setName('categoria').setDescription('Qual log').setRequired(false).addChoices(...Object.entries(LOG_NAMES).map(([value, name]) => ({ name, value })), { name: '🧪 Testar os canais de log', value: 'testar' }))
     .addBooleanOption(o => o.setName('status').setDescription('Ligado ou desligado (vazio = alterna)').setRequired(false)),
   new SlashCommandBuilder().setName('setnivel').setDescription('Define o canal dos avisos de subida de nível').addChannelOption(canalOpt('Canal')),
   new SlashCommandBuilder().setName('setverify').setDescription('Envia o painel de verificação por botão').addChannelOption(canalOpt('Canal de verificação')).addRoleOption(o => o.setName('cargo').setDescription('Cargo liberado ao verificar').setRequired(true)),
@@ -355,6 +379,7 @@ async function handleMessageDelete(message) {
     if (botDeleted.delete(message.id)) return;
     if (!logEnabled(message.guild.id, 'apagadas')) return;
     if (message.author?.bot) return;
+    if (!message.author && !message.content && !message.attachments?.size) return; // sem nenhuma informação útil
 
     const anexos = message.attachments?.size ? `\n📎 ${[...message.attachments.values()].map((a) => a.name).join(', ')}` : '';
     const embed = new EmbedBuilder()
@@ -731,6 +756,7 @@ const COMMANDS = {
 
     await interaction.deferReply();
     try {
+      markBotAction('ban', guild.id, alvo.id);
       await guild.members.ban(alvo, { reason: `${motivo} (por ${interaction.user.tag})` });
     } catch (_) {
       return interaction.editReply({ content: '❌ Erro ao banir o usuário.' });
@@ -752,6 +778,7 @@ const COMMANDS = {
     const id = options.getString('usuario').trim().replace(/[<@>]/g, '');
     if (!/^\d{15,22}$/.test(id)) return interaction.reply(eph('❌ Indica o ID numérico do usuário banido.'));
     try {
+      markBotAction('unban', guild.id, id);
       await guild.members.unban(id, `Unban por ${interaction.user.tag}`);
     } catch (_) {
       return interaction.reply(eph('❌ Não encontrei esse banimento (ou não tenho permissão).'));
@@ -794,6 +821,7 @@ const COMMANDS = {
     if (problema) return interaction.reply(eph(problema));
 
     try {
+      markBotAction('timeout', guild.id, alvo.id);
       await alvoMembro.timeout(minutos * 60 * 1000, motivo);
     } catch (_) {
       return interaction.reply(eph('❌ Erro ao silenciar o membro.'));
@@ -811,6 +839,7 @@ const COMMANDS = {
     const alvoMembro = options.getMember('usuario');
     if (!alvoMembro) return interaction.reply(eph('❌ Esse usuário não está no servidor.'));
     try {
+      markBotAction('untimeout', guild.id, alvo.id);
       await alvoMembro.timeout(null, 'Unmute');
     } catch (_) {
       return interaction.reply(eph('❌ Não consegui remover o silêncio desse membro.'));
@@ -965,14 +994,40 @@ const COMMANDS = {
     if (await deny(ctx)) return;
     const categoria = options.getString('categoria');
     const status = options.getBoolean('status');
+
+    if (categoria === 'testar') {
+      await interaction.deferReply({ flags: EPHEMERAL });
+      const resultados = [];
+      for (const [key, nome] of Object.entries(LOG_NAMES)) {
+        const destino = destinationOf(guild, key);
+        if (!destino) { resultados.push(`⚠️ **${nome}** — sem canal configurado`); continue; }
+        const canal = guild.channels.cache.get(destino);
+        try {
+          await canal.send({ embeds: [new EmbedBuilder().setColor(0x95A5A6).setTitle('🧪 Teste de log').setDescription(`Categoria: **${nome}**\nSe você está vendo isto, esse log funciona aqui.`).setTimestamp()] });
+          resultados.push(`✅ **${nome}** → <#${destino}>`);
+        } catch (_) {
+          resultados.push(`❌ **${nome}** → <#${destino}> (não consigo enviar mensagens/embeds lá)`);
+        }
+      }
+      return interaction.editReply({ content: truncate(resultados.join('\n'), 1990) });
+    }
     if (categoria) {
       const cfg = ensureGuildConfig(guild.id);
       cfg.logToggles ??= {};
       cfg.logToggles[categoria] = status ?? !logEnabled(guild.id, categoria);
       saveConfig();
     }
-    const linhas = Object.entries(LOG_NAMES).map(([k, nome]) => `${logEnabled(guild.id, k) ? '🟢' : '🔴'} **${nome}** — \`${k}\``).join('\n');
-    const embed = new EmbedBuilder().setColor(0x3498DB).setTitle('🔔 Logs e avisos do bot').setDescription(`${linhas}\n\nMude com \`/logs categoria:apagadas status:não\` (ou \`${PREFIX}logs apagadas nao\`).`);
+    const me = guild.members.me;
+    const linhas = Object.entries(LOG_NAMES).map(([k, nome]) => {
+      const destino = destinationOf(guild, k);
+      let onde;
+      if (k === 'nivel' && !destino) onde = 'no canal onde a pessoa conversou';
+      else if (!destino) onde = '⚠️ **sem canal** — configure com `setlogs`' + (k === 'apagadas' || k === 'editadas' ? ' ou `setmsgdelete`' : k === 'punicoes' ? ' ou `setpunicoes`' : '');
+      else if (!guild.channels.cache.get(destino)?.permissionsFor(me)?.has(['ViewChannel', 'SendMessages', 'EmbedLinks'])) onde = `⚠️ <#${destino}> (sem permissão para eu enviar lá)`;
+      else onde = `<#${destino}>`;
+      return `${logEnabled(guild.id, k) ? '🟢' : '🔴'} **${nome}** → ${onde}`;
+    }).join('\n');
+    const embed = new EmbedBuilder().setColor(0x3498DB).setTitle('🔔 Logs e avisos do bot').setDescription(`${linhas}\n\n🟢 ligado • 🔴 desligado\nMude com \`${PREFIX}logs apagadas nao\` (ou \`/logs\`) e confira tudo com \`${PREFIX}logs testar\`.`);
     return interaction.reply({ embeds: [embed], flags: EPHEMERAL });
   },
 
@@ -1283,8 +1338,55 @@ async function handleGuildMemberRemove(member) {
   }
 }
 
+/** Procura no registro de auditoria quem executou a ação (precisa da permissão "Ver Registro de Auditoria"). */
+async function findExecutor(guild, tipo, alvoId) {
+  try {
+    const logs = await guild.fetchAuditLogs({ type: tipo, limit: 6 });
+    const e = logs.entries.find((x) => x.target?.id === alvoId && Date.now() - x.createdTimestamp < 20000);
+    return e ? { executor: e.executor, motivo: e.reason } : null;
+  } catch (_) { return null; }
+}
+
+async function handleGuildBanAdd(ban) {
+  try {
+    const guild = ban.guild;
+    if (!logEnabled(guild.id, 'punicoes') || wasBotAction('ban', guild.id, ban.user.id)) return;
+    const info = await findExecutor(guild, AuditLogEvent.MemberBanAdd, ban.user.id);
+    await sendLog(guild, 'punicao', punishEmbed('🔨 Ban (feito direto no Discord)', 0xC0392B, ban.user, info?.executor, ban.reason || info?.motivo || 'Sem motivo informado'));
+  } catch (err) { console.error('[banAdd]', err.message); }
+}
+
+async function handleGuildBanRemove(ban) {
+  try {
+    const guild = ban.guild;
+    if (!logEnabled(guild.id, 'punicoes') || wasBotAction('unban', guild.id, ban.user.id)) return;
+    const info = await findExecutor(guild, AuditLogEvent.MemberBanRemove, ban.user.id);
+    await sendLog(guild, 'punicao', punishEmbed('♻️ Unban (feito direto no Discord)', 0x2ECC71, ban.user, info?.executor, info?.motivo || 'Sem motivo informado'));
+  } catch (err) { console.error('[banRemove]', err.message); }
+}
+
+async function logTimeoutChange(oldMember, newMember) {
+  if (oldMember.partial) return;
+  const antes = oldMember.communicationDisabledUntilTimestamp || 0;
+  const depois = newMember.communicationDisabledUntilTimestamp || 0;
+  if (antes === depois) return;
+  const guild = newMember.guild;
+  const agora = Date.now();
+  const silenciou = depois > agora;
+  const tirou = !depois && antes > agora;
+  if (!silenciou && !tirou) return;
+  if (!logEnabled(guild.id, 'punicoes') || wasBotAction(silenciou ? 'timeout' : 'untimeout', guild.id, newMember.id)) return;
+
+  const info = await findExecutor(guild, AuditLogEvent.MemberUpdate, newMember.id);
+  const embed = silenciou
+    ? punishEmbed('🔇 Silenciado (feito direto no Discord)', 0xF1C40F, newMember.user, info?.executor, info?.motivo || 'Sem motivo informado', [{ name: '⏳ Até', value: `<t:${unix(depois)}:f>`, inline: true }])
+    : punishEmbed('🔊 Silêncio removido (feito direto no Discord)', 0x2ECC71, newMember.user, info?.executor, info?.motivo || 'Sem motivo informado');
+  await sendLog(guild, 'punicao', embed);
+}
+
 async function handleGuildMemberUpdate(oldMember, newMember) {
   try {
+    await logTimeoutChange(oldMember, newMember).catch((err) => console.error('[timeoutLog]', err.message));
     const fixo = state.permNicks[newMember.guild.id]?.[newMember.id];
     if (fixo && newMember.nickname !== fixo) {
       await newMember.setNickname(fixo, 'PermNick Active');
@@ -1374,5 +1476,7 @@ module.exports = {
   hasAdminPermission,
   isStaff,
   logEnabled,
-  handleMessageUpdate
+  handleMessageUpdate,
+  handleGuildBanAdd,
+  handleGuildBanRemove
 };

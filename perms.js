@@ -75,7 +75,10 @@ function has(member, flag) {
   }
 }
 
-const isOwner = (userId) => !!OWNER_ID && userId === OWNER_ID;
+let appOwnerIds = new Set(); // dono(s) do aplicativo no Developer Portal, descobertos ao ligar
+const setAppOwners = (ids) => { appOwnerIds = new Set(ids.filter(Boolean)); };
+const hasOwner = () => !!OWNER_ID || appOwnerIds.size > 0;
+const isOwner = (userId) => (!!OWNER_ID && userId === OWNER_ID) || appOwnerIds.has(userId);
 
 /** Cargo/usuário cadastrado com /setadminrole /setadminuser (atalho opcional de acesso total). */
 function isBotAdmin(member, cfg = {}) {
@@ -115,9 +118,9 @@ function checkAccess(interaction, { strict = false } = {}) {
 
   if (need === OWNER) {
     if (isOwner(interaction.user.id)) return null;
-    return OWNER_ID
+    return hasOwner()
       ? '❌ Este comando é exclusivo do dono do bot.'
-      : '❌ Este comando é exclusivo do dono do bot (defina a variável `CREATOR_ID` no Render).';
+      : '❌ Não consegui descobrir quem é o dono do bot. Defina a variável `CREATOR_ID` (seu ID do Discord) no Render.';
   }
 
   if (!interaction.guild) return null; // em DM o próprio comando avisa que só funciona em servidor
@@ -163,6 +166,6 @@ function inviteUrl(client) {
 }
 
 module.exports = {
-  RULES, LABELS, OWNER_ID, isOwner, has, isBotAdmin, hasFullAccess, isStaff,
+  RULES, LABELS, OWNER_ID, isOwner, setAppOwners, has, isBotAdmin, hasFullAccess, isStaff,
   checkAccess, denyIfNotAllowed, lockLabel, inviteUrl, PermissionFlagsBits
 };

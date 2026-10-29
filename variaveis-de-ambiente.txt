@@ -1,0 +1,25 @@
+VARIÁVEIS DE AMBIENTE (Render > seu serviço > Environment)
+=============================================================
+Obrigatória
+  DISCORD_TOKEN         token do bot (Developer Portal > Bot)
+
+IA (Gemini) — opcional, mas necessária para /perguntar
+  GEMINI_API_KEY        chave criada em https://aistudio.google.com/apikey
+                        ⚠️ Cole SÓ aqui. Nunca em código, chat ou print. Se vazou, apague e crie outra.
+  GEMINI_MODEL          padrão: gemini-3.1-flash-lite
+  AI_DEFAULT            "off" = IA vem desligada em servidores que nunca usaram ?ia on
+  AI_COOLDOWN_SECONDS   espera entre perguntas (padrão 8)
+  AI_DAILY_LIMIT        perguntas por pessoa por dia (padrão 30)
+  AI_GLOBAL_DAILY_LIMIT perguntas por dia somando todos os servidores (padrão 400)
+
+Opcionais
+  CREATOR_ID            seu ID do Discord (o bot já descobre o dono sozinho; use só se falhar)
+  PREFIX                prefixo dos comandos de texto (padrão ?)
+  DATA_DIR              pasta de um disco persistente do Render (ex.: /data), se você tiver um
+  BACKUP_CHANNEL_ID     ID do canal de backup (normalmente NÃO precisa: use ?backup configurar)
+  CUSTOM_ROLE_PRICE     preço do cargo personalizado (padrão 1000000)
+
+O Render já cria sozinho: PORT e RENDER_EXTERNAL_URL (usada pelo anti-sono).
+
+Developer Portal (aba Bot): ligue "Message Content Intent" e "Server Members Intent".
+Primeiro uso depois de subir os arquivos:  ?backup configurar   (cria o canal privado de backup)

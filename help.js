@@ -17,14 +17,14 @@ const { lockLabel } = require('./perms');
 
 const CATEGORIES = [
   { emoji: '🛡️', nome: 'Moderação', cmds: ['ban', 'unban', 'kick', 'mute', 'unmute', 'warn', 'warnings', 'clearwarns', 'clear', 'calado', 'lock', 'unlock', 'slowmode', 'setcargo', 'nick', 'permnick', 'unpermnick', 'censura', 'automod'] },
-  { emoji: '⚙️', nome: 'Configuração', cmds: ['setwelcome', 'setlogs', 'setdenuncias', 'setduvidas', 'setpunicoes', 'setmsgdelete', 'setsuggestion', 'setnivel', 'logs', 'setverify', 'setautorole', 'delautorole', 'setadminrole', 'setadminuser', 'deladminrole', 'deladminuser', 'ia'] },
+  { emoji: '⚙️', nome: 'Configuração', cmds: ['setwelcome', 'setlogs', 'setdenuncias', 'setduvidas', 'setpunicoes', 'setmsgdelete', 'setsuggestion', 'setnivel', 'logs', 'setverify', 'setautorole', 'delautorole', 'setadminrole', 'setadminuser', 'deladminrole', 'deladminuser', 'ia', 'backup'] },
   { emoji: '💳', nome: 'Economia — Conta', cmds: ['saldo', 'patrimonio', 'depositar', 'sacar', 'transferir', 'perfil', 'rank', 'extrato', 'inventario', 'emprestimo', 'pagar', 'vender', 'cooldowns', 'addmoney', 'removemoney'] },
-  { emoji: '💼', nome: 'Economia — Ganhos', cmds: ['daily', 'weekly', 'trabalhar', 'profissao', 'minerar', 'pescar', 'cacar', 'farmar', 'negocios', 'coletar', 'investir', 'loteria', 'caixa'] },
+  { emoji: '💼', nome: 'Economia — Ganhos', cmds: ['daily', 'weekly', 'trabalhar', 'profissao', 'minerar', 'pescar', 'cacar', 'farmar', 'negocios', 'coletar', 'empresa', 'investir', 'loteria', 'caixa'] },
   { emoji: '🎮', nome: 'Jogos & Loja', cmds: ['mercado', 'loja', 'painel-economia', 'apostar', 'slots', 'coinflip', 'roleta', 'blackjack', 'roubar', 'crime'] },
   { emoji: '⭐', nome: 'Níveis & Cargos', cmds: ['nivel', 'ranknivel', 'cargosnivel', 'painel-cargos'] },
   { emoji: '🎨', nome: 'Emojis & Figurinhas', cmds: ['criaremoji', 'criarfigurinha'] },
   { emoji: '🤖', nome: 'IA & Diversão', cmds: ['perguntar', '8ball', 'dado', 'escolher', 'enquete', 'lembrete', 'sorteio'] },
-  { emoji: '🧰', nome: 'Utilidades & Suporte', cmds: ['help', 'ping', 'botinfo', 'avatar', 'userinfo', 'serverinfo', 'say', 'embed', 'ticket', 'painel-sugestao', 'sugerir', 'denuncia'] }
+  { emoji: '🧰', nome: 'Utilidades & Suporte', cmds: ['help', 'novidades', 'ping', 'botinfo', 'avatar', 'userinfo', 'serverinfo', 'say', 'embed', 'ticket', 'painel-sugestao', 'sugerir', 'denuncia'] }
 ];
 
 const helpSlashCommands = [
@@ -36,9 +36,11 @@ const helpSlashCommands = [
  *  MONTAGEM (feita uma vez, com os comandos reais)
  * ============================================================ */
 let defs = new Map();
+let prefixOnly = new Set(); // comandos que existem só com prefixo (não são slash)
 let pages = []; // [{ emoji, nome, lines: [...] }]
 
-function setHelpSources(builders) {
+function setHelpSources(builders, prefixOnlyNames = []) {
+  prefixOnly = new Set(prefixOnlyNames);
   defs = new Map();
   for (const b of builders) {
     try { const j = b.toJSON(); defs.set(j.name, j); } catch (_) { /* inválido: o hybrid já avisa */ }
@@ -57,7 +59,7 @@ function setHelpSources(builders) {
 
 const line = (name) => {
   const lock = lockLabel(name);
-  return `• \`/${name}\` — ${defs.get(name).description}${lock ? ` *(${lock})*` : ''}`;
+  return `• \`${prefixOnly.has(name) ? PREFIX : '/'}${name}\` — ${defs.get(name).description}${lock ? ` *(${lock})*` : ''}`;
 };
 
 /** Quebra uma lista de linhas em campos de até ~1000 caracteres (limite do Discord: 1024). */
@@ -130,7 +132,7 @@ function buildDetail(def) {
   }).join(' ')}`.trim();
 
   const embed = new EmbedBuilder().setColor(0x3498DB).setTitle(`🔎 /${def.name}`).setDescription(def.description)
-    .addFields({ name: 'Uso', value: `\`${uso('/')}\`\n\`${uso(PREFIX)}\`` });
+    .addFields({ name: 'Uso', value: prefixOnly.has(def.name) ? `\`${uso(PREFIX)}\` *(só com prefixo)*` : `\`${uso('/')}\`\n\`${uso(PREFIX)}\`` });
   if (opts.length) {
     embed.addFields({
       name: 'Opções',

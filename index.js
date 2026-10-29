@@ -10,6 +10,8 @@ const {
   handleMessageDelete,
   handleMessageDeleteBulk,
   handleMessageUpdate,
+  handleGuildBanAdd,
+  handleGuildBanRemove,
   handleGuildMemberAdd,
   handleGuildMemberRemove,
   handleGuildMemberUpdate,
@@ -50,6 +52,25 @@ const {
   setHelpSources
 } = require('./help.js');
 const {
+  backupSlashCommands,
+  prefixOnlyNames: backupPrefixOnly,
+  handledCommands: backupHandled,
+  handleBackupInteraction,
+  autoRestoreOnStart,
+  startBackupScheduler,
+  pushBackup
+} = require('./backup.js');
+const {
+  changelogSlashCommands,
+  handledCommands: changelogHandled,
+  handleChangelogInteraction
+} = require('./changelog.js');
+const {
+  empresasSlashCommands,
+  handledCommands: empresasHandled,
+  handleEmpresasInteraction
+} = require('./empresas.js');
+const {
   aiSlashCommands,
   handledCommands: aiHandled,
   handleAiInteraction,
@@ -58,7 +79,7 @@ const {
 const { createPrefixHandler } = require('./hybrid.js');
 const { flushAll } = require('./storage.js');
 const { PREFIX } = require('./utils.js');
-const { denyIfNotAllowed, inviteUrl } = require('./perms.js');
+const { denyIfNotAllowed, inviteUrl, setAppOwners } = require('./perms.js');
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const PORT = process.env.PORT || 10000;
@@ -73,7 +94,8 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildModeration // eventos de ban/unban feitos direto no Discord (log)
   ],
   // Necessário para receber eventos de mensagens/membros que não estão em cache
   partials: [Partials.Message, Partials.Channel, Partials.GuildMember]
@@ -84,9 +106,15 @@ const client = new Client({
  * ------------------------------------------------------------ */
 const allBuilders = [
   ...allSlashCommands, ...economySlashCommands, ...funSlashCommands, ...aiSlashCommands,
-  ...levelsSlashCommands, ...rolesSlashCommands, ...expressionsSlashCommands, ...helpSlashCommands
+  ...levelsSlashCommands, ...rolesSlashCommands, ...expressionsSlashCommands, ...helpSlashCommands,
+  ...backupSlashCommands, ...changelogSlashCommands, ...empresasSlashCommands
 ];
-setHelpSources(allBuilders); // a ajuda é montada a partir dos comandos reais
+
+// O Discord só aceita 100 slash commands. Estes funcionam apenas com o prefixo (?backup, ?logs),
+// não ocupam vaga e continuam aparecendo na ajuda.
+const prefixOnly = new Set([...backupPrefixOnly, 'logs']);
+const slashBuilders = allBuilders.filter((b) => !prefixOnly.has(b.name));
+setHelpSources(allBuilders, [...prefixOnly]); // a ajuda é montada a partir dos comandos reais
 
 /** Cada módulo ignora o que não é dele e trata os próprios erros. */
 async function dispatch(interaction) {
@@ -101,6 +129,9 @@ async function dispatch(interaction) {
   await handleRolesInteraction(interaction);
   await handleExpressionsInteraction(interaction);
   await handleHelpInteraction(interaction);
+  await handleBackupInteraction(interaction);
+  await handleChangelogInteraction(interaction);
+  await handleEmpresasInteraction(interaction);
 }
 
 const handlePrefix = createPrefixHandler({ builders: allBuilders, dispatch });
@@ -125,18 +156,32 @@ http.createServer((req, res) => {
 client.once(Events.ClientReady, async (c) => {
   console.log(`✅ Bot online como ${c.user.tag}`);
 
+  // Dono do bot (quem criou o aplicativo): usado em comandos exclusivos, sem precisar de CREATOR_ID
   try {
-    const nomes = allBuilders.map((cmd) => cmd.name);
+    const app = await c.application.fetch();
+    const dono = app.owner;
+    const ids = dono?.members ? [...dono.members.values()].map((m) => m.user?.id ?? m.id) : [dono?.id];
+    if (dono?.ownerId) ids.push(dono.ownerId);
+    setAppOwners(ids);
+  } catch (err) {
+    console.warn('⚠️ Não consegui descobrir o dono do bot:', err.message);
+  }
+
+  // 1º: se o disco foi apagado (atualização no Render), recupera os dados do canal de backup
+  await autoRestoreOnStart(c).catch((err) => console.error('[backup] restauração:', err.message));
+
+  try {
+    const nomes = slashBuilders.map((cmd) => cmd.name);
     const duplicados = nomes.filter((n, i) => nomes.indexOf(n) !== i);
     if (duplicados.length) console.warn('⚠️ Comandos duplicados:', [...new Set(duplicados)].join(', '));
-    if (nomes.length > 100) console.warn(`⚠️ ${nomes.length} comandos registrados (o limite do Discord é 100).`);
+    if (nomes.length > 100) console.warn(`⚠️ ${nomes.length} slash commands (o limite do Discord é 100): o registro vai falhar.`);
 
-    const tratados = new Set([...ticketHandled, ...economyHandled, ...funHandled, ...aiHandled, ...levelsHandled, ...rolesHandled, ...expressionsHandled, ...helpHandled]);
-    const semHandler = nomes.filter((n) => !tratados.has(n));
+    const tratados = new Set([...ticketHandled, ...economyHandled, ...funHandled, ...aiHandled, ...levelsHandled, ...rolesHandled, ...expressionsHandled, ...helpHandled, ...backupHandled, ...changelogHandled, ...empresasHandled]);
+    const semHandler = allBuilders.map((cmd) => cmd.name).filter((n) => !tratados.has(n));
     if (semHandler.length) console.warn('⚠️ Comandos registrados sem handler:', semHandler.join(', '));
 
-    await c.application.commands.set(allBuilders.map((cmd) => cmd.toJSON()));
-    console.log(`✅ ${nomes.length} comandos registrados (slash + prefixo "${PREFIX}")!`);
+    await c.application.commands.set(slashBuilders.map((cmd) => cmd.toJSON()));
+    console.log(`✅ ${nomes.length} slash commands + ${prefixOnly.size} só com prefixo ("${PREFIX}") registrados!`);
   } catch (error) {
     console.error('❌ Erro ao registrar comandos:', error);
   }
@@ -144,6 +189,7 @@ client.once(Events.ClientReady, async (c) => {
   startScheduler(c);
   startEconomyScheduler(c);
   startFunScheduler(c);
+  startBackupScheduler(c);
 
   const link = inviteUrl(c);
   if (link) console.log(`🔗 Link para adicionar o bot em qualquer servidor:\n${link}`);
@@ -160,8 +206,9 @@ function atualizarPresenca(c) {
 
 /** Quando o bot entra num servidor novo: manda um "primeiros passos" no canal certo. */
 client.on(Events.GuildCreate, async (guild) => {
-  console.log(`➕ Entrei no servidor "${guild.name}" (${guild.memberCount} membros)`);
   atualizarPresenca(client);
+  if (Date.now() - (guild.joinedTimestamp || 0) > 60_000) return; // já estava no servidor: não repete a mensagem a cada reinício
+  console.log(`➕ Entrei no servidor "${guild.name}" (${guild.memberCount} membros)`);
   try {
     const me = guild.members.me;
     const canal = [guild.systemChannel, ...guild.channels.cache.filter((ch) => ch.isTextBased?.() && !ch.isThread?.()).values()]
@@ -207,6 +254,8 @@ client.on(Events.MessageCreate, async (message) => {
 client.on(Events.MessageDelete, handleMessageDelete);
 client.on(Events.MessageBulkDelete, handleMessageDeleteBulk);
 client.on(Events.MessageUpdate, handleMessageUpdate);
+client.on(Events.GuildBanAdd, handleGuildBanAdd);
+client.on(Events.GuildBanRemove, handleGuildBanRemove);
 client.on(Events.InteractionCreate, dispatch);
 
 client.on(Events.GuildMemberAdd, handleGuildMemberAdd);
@@ -252,11 +301,28 @@ login();
 /* ------------------------------------------------------------
  *  Desligamento limpo (o Render envia SIGTERM a cada deploy)
  * ------------------------------------------------------------ */
-function shutdown(signal) {
+let desligando = false;
+async function shutdown(signal) {
+  if (desligando) return;
+  desligando = true;
   console.log(`\n${signal} recebido, salvando dados e encerrando...`);
   flushAll();
+  try {
+    await Promise.race([pushBackup(client, { force: true }), new Promise((r) => setTimeout(r, 12000))]); // última cópia no Discord
+  } catch (_) { /* ignora */ }
   client.destroy();
   process.exit(0);
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+
+/* ------------------------------------------------------------
+ *  Anti-sono do Render: o serviço gratuito "dorme" depois de 15 min sem acessos.
+ *  O bot acessa o próprio endereço público (RENDER_EXTERNAL_URL, criada pelo Render) a cada 10 min.
+ * ------------------------------------------------------------ */
+if (process.env.RENDER_EXTERNAL_URL) {
+  setInterval(() => {
+    fetch(process.env.RENDER_EXTERNAL_URL, { signal: AbortSignal.timeout(15000) }).catch(() => {});
+  }, 10 * 60_000).unref();
+  console.log('🔔 Anti-sono ativo (auto-ping a cada 10 min).');
+}

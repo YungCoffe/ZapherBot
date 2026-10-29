@@ -18,8 +18,9 @@ const byFile = new Map(); // nome do arquivo -> store (usado pelo /backup)
  *  - backup automático se o arquivo estiver corrompido
  */
 class JsonStore {
-  constructor(fileName, { fallback = {}, migrate = null, delay = 500, pretty = true } = {}) {
+  constructor(fileName, { fallback = {}, migrate = null, init = null, delay = 500, pretty = true } = {}) {
     this.fileName = fileName;
+    this.init = init; // preenche campos que podem faltar (ex.: backup de uma versão antiga)
     this.migrate = migrate;
     this.pretty = pretty;
     this.file = path.join(DATA_DIR, fileName);
@@ -27,6 +28,7 @@ class JsonStore {
     this.timer = null;
     this.dirty = false;
     this.data = this._load(fallback, migrate);
+    if (this.init) this.init(this.data);
     stores.add(this);
     byFile.set(fileName, this);
   }
@@ -55,6 +57,7 @@ class JsonStore {
     const novo = this.migrate ? this.migrate(newData) : newData;
     for (const key of Object.keys(this.data)) delete this.data[key];
     Object.assign(this.data, novo);
+    if (this.init) this.init(this.data);
     this.save();
   }
 

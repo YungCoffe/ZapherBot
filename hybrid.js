@@ -22,7 +22,8 @@ const ALIASES = {
   lvl: 'nivel', xp: 'nivel', av: 'avatar',
   pergunta: 'perguntar', ask: 'perguntar',
   dados: 'dado', cd: 'cooldowns', biz: 'negocios', collect: 'coletar',
-  convite: 'botinfo', invite: 'botinfo', add: 'botinfo'
+  convite: 'botinfo', invite: 'botinfo', add: 'botinfo',
+  updates: 'novidades', changelog: 'novidades', atualizacoes: 'novidades', company: 'empresa', empresas: 'empresa'
 };
 
 const MULT = { k: 1e3, m: 1e6, mi: 1e6, b: 1e9 };
