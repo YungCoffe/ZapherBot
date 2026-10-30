@@ -10,11 +10,13 @@
  *   • a cada alteração (no máximo de 10 em 10 minutos) e ao receber o aviso de desligamento;
  *   • ao ligar com os dados vazios, ele baixa o último backup e restaura tudo sozinho.
  *
- * Configuração (uma vez só, pelo dono do bot):  ?backup configurar
- *   → cria o canal privado #zapher-backup. Nas próximas vezes ele é encontrado sozinho pelo
+ * Configuração (uma vez só, pelo dono do bot):  ?backup  (ou ?backup configurar)
+ *   → cria o canal privado #💾・zapher-backup. Nas próximas vezes ele é encontrado sozinho pelo
  *     nome/tópico (não precisa de variável de ambiente). Opcional: BACKUP_CHANNEL_ID no Render.
  *
- * Comando só com prefixo (não ocupa vaga de slash command): ?backup status|configurar|agora|recuperar|exportar|restaurar
+ * Comando só com prefixo (não ocupa vaga de slash command):
+ *   ?backup  → cria/configura o canal
+ *   ?backup status|configurar|agora|recuperar|exportar|restaurar
  */
 
 const zlib = require('zlib');
@@ -26,7 +28,7 @@ const { eph, truncate, respond, unix, describeError } = require('./utils');
 const { checkAccess } = require('./perms');
 
 const MARKER = 'ZAPHER-BACKUP';
-const CHANNEL_NAME = 'zapher-backup';
+const CHANNEL_NAME = '💾・zapher-backup';
 const KEEP = 5;                    // quantos backups manter no canal
 const MIN_INTERVAL = 10 * 60_000;  // no máximo 1 backup a cada 10 min (se algo mudou)
 const CHECK_EVERY = 2 * 60_000;
@@ -34,7 +36,7 @@ const VERSION = (() => { try { return require('./package.json').version; } catch
 
 const backupSlashCommands = [
   new SlashCommandBuilder().setName('backup').setDescription('Backup e restauração dos dados do bot (só o dono)')
-    .addStringOption(o => o.setName('acao').setDescription('O que fazer').setRequired(true).addChoices(
+    .addStringOption(o => o.setName('acao').setDescription('O que fazer (vazio = criar/configurar o canal)').setRequired(false).addChoices(
       { name: 'Ver o estado do backup', value: 'status' },
       { name: 'Configurar o canal de backup', value: 'configurar' },
       { name: 'Fazer backup agora', value: 'agora' },
@@ -97,7 +99,7 @@ async function findChannel(client) {
   for (const guild of client.guilds.cache.values()) {
     const me = guild.members.me;
     const ch = guild.channels.cache.find((c) => c.isTextBased?.() && !c.isThread?.()
-      && (c.name === CHANNEL_NAME || c.topic?.includes(MARKER)) && usable(c, me));
+      && (c.name === CHANNEL_NAME || c.name === 'zapher-backup' || c.topic?.includes(MARKER)) && usable(c, me));
     if (ch) return (channelCache = ch);
   }
   return null;
@@ -220,6 +222,26 @@ function startBackupScheduler(client) {
  * ============================================================ */
 const handledCommands = ['backup'];
 
+/** Somente o dono do bot e o próprio bot recebem acesso explícito ao canal. */
+function backupOverwrites(guild, ownerId, botId) {
+  return [
+    { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+    {
+      id: botId,
+      allow: [
+        PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.AttachFiles, PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.ManageMessages
+      ]
+    },
+    {
+      id: ownerId,
+      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory],
+      deny: [PermissionFlagsBits.SendMessages]
+    }
+  ];
+}
+
 async function configurar(interaction) {
   const { guild, user, options } = interaction;
   if (!guild) return interaction.reply(eph('❌ Use este comando dentro do servidor onde quer guardar os backups.'));
@@ -231,15 +253,16 @@ async function configurar(interaction) {
         name: CHANNEL_NAME,
         type: ChannelType.GuildText,
         topic: `${MARKER} — cópias de segurança do bot. NÃO apague este canal. Mantenha-o privado.`,
-        permissionOverwrites: [
-          { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
-          { id: interaction.client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageMessages] },
-          { id: user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory] }
-        ],
+        permissionOverwrites: backupOverwrites(guild, user.id, interaction.client.user.id),
         reason: 'Canal de backup do bot'
       });
     } else {
-      await canal.setTopic(`${MARKER} — cópias de segurança do bot. NÃO apague este canal. Mantenha-o privado.`).catch(() => {});
+      // Reutilizar um canal não pode deixar permissões antigas expondo os backups.
+      await canal.permissionOverwrites.set(
+        backupOverwrites(guild, user.id, interaction.client.user.id),
+        'Canal de backup restrito ao dono do bot'
+      );
+      await canal.setTopic(`${MARKER} — cópias de segurança do bot. NÃO apague este canal. Mantenha-o privado.`);
     }
   } catch (err) {
     return interaction.reply(eph(describeError(err) || '❌ Não consegui criar o canal.'));
@@ -273,7 +296,7 @@ const COMMANDS = {
   async backup(interaction) {
     const negado = checkAccess(interaction, { strict: true });
     if (negado) return interaction.reply(eph(negado));
-    const acao = interaction.options.getString('acao');
+    const acao = interaction.options.getString('acao') || 'configurar';
 
     if (acao === 'status') return status(interaction);
     if (acao === 'configurar') return configurar(interaction);

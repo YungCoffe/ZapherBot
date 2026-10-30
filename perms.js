@@ -44,7 +44,7 @@ const RULES = {
   setcargo: 'ManageRoles', 'painel-cargos': 'ManageRoles', cargosnivel: 'ManageRoles',
   nick: 'ManageNicknames', permnick: 'ManageNicknames', unpermnick: 'ManageNicknames',
   // Configuração do servidor
-  automod: 'ManageGuild', ticket: 'ManageGuild', 'painel-sugestao': 'ManageGuild', ia: 'ManageGuild', logs: 'ManageGuild',
+  automod: 'ManageGuild', ticket: 'ManageGuild', setup: 'ManageGuild', 'painel-sugestao': 'ManageGuild', ia: 'ManageGuild', logs: 'ManageGuild',
   setwelcome: 'ManageGuild', setlogs: 'ManageGuild', setdenuncias: 'ManageGuild', setduvidas: 'ManageGuild', setpunicoes: 'ManageGuild',
   setmsgdelete: 'ManageGuild', setsuggestion: 'ManageGuild', setnivel: 'ManageGuild', setverify: 'ManageGuild',
   setautorole: 'ManageGuild', delautorole: 'ManageGuild',

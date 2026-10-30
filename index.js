@@ -110,9 +110,9 @@ const allBuilders = [
   ...backupSlashCommands, ...changelogSlashCommands, ...empresasSlashCommands
 ];
 
-// O Discord só aceita 100 slash commands. Estes funcionam apenas com o prefixo (?backup, ?logs),
-// não ocupam vaga e continuam aparecendo na ajuda.
-const prefixOnly = new Set([...backupPrefixOnly, 'logs']);
+// O Discord só aceita 100 slash commands. Estes funcionam apenas com o prefixo
+// (?backup, ?logs, ?setup), não ocupam vaga e continuam aparecendo na ajuda.
+const prefixOnly = new Set([...backupPrefixOnly, 'logs', 'setup']);
 const slashBuilders = allBuilders.filter((b) => !prefixOnly.has(b.name));
 setHelpSources(allBuilders, [...prefixOnly]); // a ajuda é montada a partir dos comandos reais
 
