@@ -109,7 +109,7 @@ const pingRoleIds = (guild) => [...new Set([...(getGuildConfig(guild.id).ticketS
 /* ============================================================
  *  PAINEL
  * ============================================================ */
-const ticketSlashCommands = [
+const SlashCommandsBuilder = [
   new SlashCommandBuilder().setName('ticket').setDescription('Envia o painel de tickets (e define a categoria/equipe, se informado)')
     .addChannelOption(o => o.setName('categoria').setDescription('Categoria onde os canais dos tickets serão criados').setRequired(false).addChannelTypes(ChannelType.GuildCategory))
     .addRoleOption(o => o.setName('cargo').setDescription('Cargo da equipe de suporte (use de novo para remover)').setRequired(false)),
