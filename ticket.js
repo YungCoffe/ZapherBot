@@ -21,7 +21,7 @@ const {
 const { JsonStore } = require('./storage');
 const { EPHEMERAL, eph, truncate, unix, respond, describeError, fmtDateTime } = require('./utils');
 const { isStaff, checkAccess } = require('./perms');
-const { getGuildConfig, ensureGuildConfig, saveConfig, logEnabled, sendLog } = require('./ticket');
+const { getGuildConfig, ensureGuildConfig, saveConfig, logEnabled, sendLog } = require('./perms'); // ou o arquivo correto de onde vêm essas funções de config/logs
 
 const TYPES = {
   duvida: { nome: 'Dúvida', emoji: '❓', cor: 0x00AE86, estilo: ButtonStyle.Primary, obrigaDetalhes: false, intro: 'Explique sua dúvida com o máximo de detalhes. Alguém da equipe vai responder em breve.' },
