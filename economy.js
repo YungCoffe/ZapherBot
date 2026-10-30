@@ -1163,4 +1163,15 @@ async function handleEconomyInteraction(interaction) {
   }
 }
 
-module.exports = { economySlashCommands, handledCommands, handleEconomyInteraction, startEconomyScheduler, giveMoney, earnMoney, chargeUser, getUserAccount, saveEcoData, fmt };
+/** Cargos pagos na loja deste servidor (personalizados e VIP): o setup completo nunca os apaga. */
+function paidRoleIds(guildId) {
+  const ids = new Set();
+  for (const acc of Object.values(data)) {
+    const personalizado = acc?.customRoles?.[guildId];
+    if (personalizado) ids.add(personalizado);
+    for (const vip of acc?.vips || []) if (vip.guildId === guildId && vip.roleId) ids.add(vip.roleId);
+  }
+  return ids;
+}
+
+module.exports = { paidRoleIds, economySlashCommands, handledCommands, handleEconomyInteraction, startEconomyScheduler, giveMoney, earnMoney, chargeUser, getUserAccount, saveEcoData, fmt };

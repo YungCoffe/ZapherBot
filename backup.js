@@ -343,7 +343,13 @@ async function handleBackupInteraction(interaction) {
   }
 }
 
+/** É o canal privado de backup do bot? (o setup completo nunca o apaga) */
+function isBackupChannel(channel) {
+  return !!channel?.isTextBased?.() && !channel.isThread?.()
+    && (channel.name === CHANNEL_NAME || channel.name === 'zapher-backup' || !!channel.topic?.includes(MARKER));
+}
+
 module.exports = {
-  backupSlashCommands, prefixOnlyNames, handledCommands, handleBackupInteraction,
+  isBackupChannel, backupSlashCommands, prefixOnlyNames, handledCommands, handleBackupInteraction,
   autoRestoreOnStart, startBackupScheduler, pushBackup
 };

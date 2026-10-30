@@ -70,13 +70,14 @@ async function applyLevelRole(member, level) {
 }
 
 /** Cria (ou reaproveita) os cargos da escada. Devolve { criados, existentes }. */
-async function ensureLevelRoles(guild, anchor) {
+async function ensureLevelRoles(guild, anchor, { topDown = false } = {}) {
   const cfg = ensureGuildConfig(guild.id);
   const atuais = new Map((cfg.levelRoles || []).map((t) => [t.level, t.roleId]));
   const resultado = [];
   let criados = 0;
 
-  for (const tier of LEVEL_TIERS) {
+  // topDown: cria do maior para o menor, assim cada cargo novo nasce abaixo do anterior e o Imortal fica por cima
+  for (const tier of (topDown ? [...LEVEL_TIERS].reverse() : LEVEL_TIERS)) {
     let role = guild.roles.cache.get(atuais.get(tier.level)) || guild.roles.cache.find((r) => r.name === tierName(tier));
     if (!role) {
       role = await guild.roles.create({
@@ -91,10 +92,19 @@ async function ensureLevelRoles(guild, anchor) {
     }
     resultado.push({ level: tier.level, roleId: role.id });
   }
-  cfg.levelRoles = resultado;
+  cfg.levelRoles = resultado.sort((a, b) => a.level - b.level);
   saveConfig();
   return { criados, existentes: LEVEL_TIERS.length - criados };
 }
+
+/** Id do cargo de nível que corresponde a um nível (ou null). */
+function tierRoleIdFor(guild, level) {
+  const alvo = [...tiersOf(guild)].reverse().find((t) => t.level <= level);
+  return alvo ? alvo.roleId : null;
+}
+
+/** Nível atual de um membro neste servidor (0 se nunca ganhou XP). */
+const levelOf = (guildId, userId) => levelsStore.data[guildId]?.[userId]?.level || 0;
 
 /* ============================================================
  *  XP POR MENSAGEM
@@ -279,4 +289,4 @@ async function handleLevelsInteraction(interaction) {
   }
 }
 
-module.exports = { levelsSlashCommands, handledCommands, handleLevelsInteraction, handleXp, applyLevelRole, LEVEL_TIERS };
+module.exports = { levelsSlashCommands, handledCommands, handleLevelsInteraction, handleXp, applyLevelRole, LEVEL_TIERS, ensureLevelRoles, tierRoleIdFor, levelOf };

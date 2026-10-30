@@ -13,6 +13,16 @@ const { eph, respond, describeError } = require('./utils');
 
 const CHANGELOG = [
   {
+    version: '2.7.0', data: '30/10/2026', titulo: 'Setup que recria o servidor e ticket só marca o Suporte',
+    itens: [
+      '🏗️ **`/setup` recria tudo do zero**: apaga canais e cargos e cria de novo a hierarquia (Dono, Sub Dono, Coordenador, HMod, Moderador, Staff, Suporte), cargos de nível, cargos de interesse, categorias e canais (informações, comunidade, jogos, criatividade, economia, voz e staff), logs, tickets, regras, verificação, sugestões, guia e painel de cargos, já com as permissões de cada cargo.',
+      '🛡️ **Segurança**: só o dono ou um Administrador usa, pede confirmação em botão (vale 60 segundos) e protege o canal de backup e os cargos pagos na loja. Quem tinha cargo equivalente (dono, sub dono, coordenador, hmod, moderador, suporte) recebe o novo automaticamente.',
+      '🔄 **`/setup acao:atualizar`**: o setup antigo, que não apaga nada e só completa o que falta.',
+      '🎫 **Tickets**: ao abrir, só o cargo **Suporte** é marcado. Os demais cargos da equipe continuam vendo e atendendo o ticket, só não recebem a marcação.',
+      '🏷️ **Painel de cargos**: avisos, eventos, sorteios, gamer, dev e designer por botão.'
+    ]
+  },
+  {
     version: '2.6.0', data: '30/10/2026', titulo: 'Servidor completo, avaliação obrigatória e ajuda integrada',
     itens: [
       '🏗️ **`?setup` completo**: cria ou reutiliza cargos, categorias, canais, logs, regras, verificação, sugestões, níveis, voz e toda a estrutura de tickets.',

@@ -229,9 +229,10 @@ const allSlashCommands = [
   new SlashCommandBuilder().setName('lock').setDescription('Tranca o canal atual'),
   new SlashCommandBuilder().setName('unlock').setDescription('Destranca o canal atual'),
   new SlashCommandBuilder().setName('ticket').setDescription('Envia o painel de atendimento/denúncia'),
-  new SlashCommandBuilder().setName('setup').setDescription('Configura cargos, canais, logs, tickets e recursos essenciais do servidor')
+  new SlashCommandBuilder().setName('setup').setDescription('Recria o servidor do zero: cargos, canais, logs, permissões, níveis, tickets e painéis')
     .addStringOption(o => o.setName('acao').setDescription('Etapa que deseja executar (vazio = servidor completo)').setRequired(false).addChoices(
-      { name: 'Servidor completo', value: 'completo' },
+      { name: 'Servidor completo (apaga tudo e recria do zero)', value: 'completo' },
+      { name: 'Atualizar sem apagar (só completa o que falta)', value: 'atualizar' },
       { name: 'Somente estrutura de tickets', value: 'tickets' },
       { name: 'Somente emojis dos canais', value: 'emojis' }
     )),
@@ -508,6 +509,20 @@ function staffRoleIds(guild, cfg = {}) {
   ]);
 }
 
+/**
+ * Cargos que são MARCADOS (@) quando um ticket abre: SOMENTE o Suporte.
+ * Os demais cargos de equipe continuam vendo e atendendo o ticket (permissões em staffRoleIds); só não recebem a marcação.
+ */
+function supportRoleIds(guild, cfg = {}) {
+  const ids = new Set();
+  const salvo = guild.roles.cache.get(cfg.setupRoles?.suporte);
+  if (salvo && !salvo.managed) ids.add(salvo.id);
+  for (const r of guild.roles.cache.values()) {
+    if (!r.managed && r.id !== guild.id && matchRoleKey(r.name) === 'suporte') ids.add(r.id);
+  }
+  return ids;
+}
+
 function ticketControlRows() {
   const ratingRow = new ActionRowBuilder().addComponents(
     ...[1, 2, 3, 4, 5].map((nota) => new ButtonBuilder()
@@ -523,51 +538,147 @@ function ticketControlRows() {
   return [ratingRow, actionRow];
 }
 
+const permFlags = (...nomes) => nomes.map((n) => PermissionFlagsBits[n]).filter((p) => p !== undefined);
+
+/** Cargos de interesse/aviso que as pessoas pegam sozinhas pelo painel (nunca têm permissões). */
+const SELF_ROLES = {
+  avisos: { emoji: '📢', label: 'Avisos', desc: 'Receba a marcação dos anúncios importantes' },
+  eventos: { emoji: '🎉', label: 'Eventos', desc: 'Seja avisado dos eventos e campeonatos' },
+  sorteios: { emoji: '🎁', label: 'Sorteios', desc: 'Seja avisado quando houver sorteio' },
+  gamer: { emoji: '🎮', label: 'Gamer', desc: 'Para quem joga e quer achar grupo' },
+  dev: { emoji: '💻', label: 'Dev', desc: 'Programação e tecnologia' },
+  designer: { emoji: '🎨', label: 'Designer', desc: 'Design, arte e criação' }
+};
+
+/**
+ * Cargos do setup. A ORDEM É A HIERARQUIA (de cima para baixo): cada cargo novo nasce embaixo do anterior.
+ * "niveis" é o ponto onde a escada de cargos de nível (Imortal ... Novato) é criada.
+ */
 const SETUP_ROLES = {
-  staff: {
-    name: '🛡️・Staff', color: 0x5865F2, hoist: true,
-    permissions: [PermissionFlagsBits.ManageMessages, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ModerateMembers]
+  dono: {
+    name: '👑・Dono', color: 0xF1C40F, hoist: true,
+    permissions: permFlags('Administrator')
+  },
+  subdono: {
+    name: '💎・Sub Dono', color: 0x1ABC9C, hoist: true,
+    permissions: permFlags('Administrator')
+  },
+  coordenador: {
+    name: '🧭・Coordenador', color: 0xE91E63, hoist: true,
+    permissions: permFlags('ManageGuild', 'ManageRoles', 'ManageChannels', 'ManageMessages', 'ManageNicknames', 'KickMembers', 'BanMembers',
+      'ModerateMembers', 'ViewAuditLog', 'MuteMembers', 'MoveMembers', 'DeafenMembers', 'ManageGuildExpressions', 'MentionEveryone')
+  },
+  hmod: {
+    name: '⚜️・HMod', color: 0xC0392B, hoist: true,
+    permissions: permFlags('ManageMessages', 'ManageNicknames', 'KickMembers', 'BanMembers', 'ModerateMembers', 'ViewAuditLog',
+      'MuteMembers', 'MoveMembers', 'DeafenMembers')
   },
   moderador: {
     name: '🔨・Moderador', color: 0xE67E22, hoist: true,
-    permissions: [PermissionFlagsBits.ManageMessages, PermissionFlagsBits.ModerateMembers, PermissionFlagsBits.BanMembers, PermissionFlagsBits.KickMembers, PermissionFlagsBits.ManageNicknames]
+    permissions: permFlags('ManageMessages', 'ModerateMembers', 'BanMembers', 'KickMembers', 'ManageNicknames', 'MuteMembers', 'MoveMembers')
+  },
+  staff: {
+    name: '🛡️・Staff', color: 0x5865F2, hoist: true,
+    permissions: permFlags('ManageMessages', 'ManageChannels', 'ModerateMembers')
   },
   suporte: {
     name: '🎫・Suporte', color: 0x3498DB, hoist: true,
-    permissions: [PermissionFlagsBits.ManageMessages, PermissionFlagsBits.ModerateMembers]
+    permissions: permFlags('ManageMessages', 'ModerateMembers')
   },
+  niveis: { niveis: true, permissions: [] },
+  ...Object.fromEntries(Object.entries(SELF_ROLES).map(([key, r]) => [key, {
+    name: `${r.emoji}・${r.label}`, color: 0, hoist: false, self: true, permissions: []
+  }])),
   membro: { name: '✅・Membro', color: 0x2ECC71, hoist: false, permissions: [] },
   bots: { name: '🤖・Bots', color: 0x95A5A6, hoist: false, permissions: [] }
 };
+
+/** Cargos de equipe: usados para devolver cada pessoa ao cargo equivalente depois do setup completo. */
+const STAFF_KEYS = ['dono', 'subdono', 'coordenador', 'hmod', 'moderador', 'staff', 'suporte'];
+const ROLE_ALIASES = {
+  dono: ['dono', 'dona', 'owner', 'fundador', 'fundadora', 'founder'],
+  subdono: ['sub dono', 'subdono', 'sub dona', 'co dono', 'codono', 'co owner', 'coowner', 'vice dono'],
+  coordenador: ['coordenador', 'coordenadora', 'coordenacao', 'coord'],
+  hmod: ['hmod', 'h mod', 'head mod', 'head moderador', 'head moderator'],
+  moderador: ['moderador', 'moderadora', 'moderator', 'mod'],
+  staff: ['staff', 'equipe'],
+  suporte: ['suporte', 'support', 'helper', 'ajudante']
+};
+/** "🔨・Moderador" -> "moderador" (sem emoji, acento, símbolos ou caixa alta). */
+const cleanRoleName = (nome) => normalize(nome).replace(/[^a-z0-9]+/g, ' ').trim();
+function matchRoleKey(nome) {
+  const limpo = cleanRoleName(nome);
+  return Object.keys(ROLE_ALIASES).find((k) => ROLE_ALIASES[k].includes(limpo)) || null;
+}
 
 function baseChannelName(name) {
   const nome = normalize(name);
   return nome.includes('・') ? nome.slice(nome.indexOf('・') + 1).trim() : nome.trim();
 }
 
-async function setupEssentialRoles(guild) {
+/** Permissões "seguras" do @everyone depois do setup completo (o bot só mexe no que ele mesmo consegue conceder). */
+const EVERYONE_SAFE = permFlags('ViewChannel', 'SendMessages', 'SendMessagesInThreads', 'CreatePublicThreads', 'ReadMessageHistory',
+  'AddReactions', 'EmbedLinks', 'AttachFiles', 'UseExternalEmojis', 'UseExternalStickers', 'UseApplicationCommands', 'Connect',
+  'Speak', 'Stream', 'UseVAD', 'ChangeNickname', 'CreateInstantInvite', 'SendPolls');
+
+async function applyEveryoneBaseline(guild) {
+  const me = guild.members.me;
+  const everyone = guild.roles.everyone;
+  const permissoes = EVERYONE_SAFE.filter((p) => everyone.permissions.has(p) || me?.permissions.has(p));
+  await everyone.setPermissions(permissoes, 'Setup completo: permissões básicas do @everyone');
+}
+
+/**
+ * Cria (ou reaproveita) toda a hierarquia de cargos.
+ * avoid: cargos que NUNCA devem ser reaproveitados (ex.: cargos pagos na loja, para ninguém virar "Suporte" pelo nome).
+ * baseline: também limpa as permissões do @everyone (usado só no setup que recria tudo).
+ */
+async function setupEssentialRoles(guild, { avoid = new Set(), baseline = false } = {}) {
   const cfg = ensureGuildConfig(guild.id);
   cfg.setupRoles ??= {};
+  const me = guild.members.me;
+  const reduzidos = [];
   let criados = 0;
 
   for (const [key, definition] of Object.entries(SETUP_ROLES)) {
+    if (definition.niveis) {
+      try {
+        const { ensureLevelRoles } = require('./levels');
+        criados += (await ensureLevelRoles(guild, null, { topDown: true })).criados;
+      } catch (err) {
+        console.error('[setup] cargos de nível:', err.message);
+      }
+      continue;
+    }
+
     let role = guild.roles.cache.get(cfg.setupRoles[key]);
-    if (!role || role.managed) role = null;
-    role ||= guild.roles.cache.find((r) => !r.managed && baseChannelName(r.name) === baseChannelName(definition.name));
+    if (!role || role.managed || avoid.has(role.id)) role = null;
+    role ||= guild.roles.cache.find((r) => !r.managed && r.id !== guild.id && !avoid.has(r.id)
+      && baseChannelName(r.name) === baseChannelName(definition.name)
+      && (!definition.self || r.permissions.bitfield === 0n)); // cargo de interesse nunca reaproveita cargo com permissões
     if (!role) {
-      role = await guild.roles.create({ ...definition, mentionable: false, reason: 'Setup completo do servidor' });
+      // O Discord não deixa conceder permissão que o próprio bot não tem
+      const permissions = definition.permissions.filter((p) => me?.permissions.has(p));
+      if (permissions.length < definition.permissions.length) reduzidos.push(definition.name);
+      role = await guild.roles.create({
+        name: definition.name, color: definition.color, hoist: definition.hoist, permissions,
+        mentionable: false, reason: 'Setup completo do servidor'
+      });
       criados++;
     }
     cfg.setupRoles[key] = role.id;
   }
 
   cfg.ticketStaffRoles = [...new Set([
-    ...(cfg.ticketStaffRoles || []), cfg.setupRoles.staff, cfg.setupRoles.moderador, cfg.setupRoles.suporte
+    ...(cfg.ticketStaffRoles || []),
+    ...STAFF_KEYS.map((k) => cfg.setupRoles[k]).filter(Boolean)
   ])];
   cfg.autoRole ??= cfg.setupRoles.membro;
   cfg.verifyRole ??= cfg.setupRoles.membro;
   saveConfig();
-  return { criados, ids: { ...cfg.setupRoles } };
+
+  if (baseline) await applyEveryoneBaseline(guild).catch((err) => console.error('[setup] @everyone:', err.message));
+  return { criados, reduzidos, ids: { ...cfg.setupRoles } };
 }
 
 async function ensureSetupChannel(guild, cfg, key, options) {
@@ -590,79 +701,186 @@ async function ensureSetupChannel(guild, cfg, key, options) {
   return { channel, criado };
 }
 
+/* ============================================================
+ *  ESTRUTURA DO SERVIDOR (categorias e canais)
+ *  mode: 'open' (todos conversam) | 'readonly' (todos leem, só a staff escreve) | 'staff' (privado da equipe)
+ *  voice: true = canal de voz. O "topic" vira descrição do canal e entra no guia do servidor.
+ * ============================================================ */
+const SERVER_LAYOUT = [
+  {
+    key: 'categoriaInformacoes', name: '📁・informações', mode: 'readonly', channels: [
+      { key: 'welcome', name: '👋・boas-vindas', topic: 'Clique em Verificar-me para receber o cargo de membro.' },
+      { key: 'regras', name: '📖・regras', topic: 'Leia antes de participar. Quebrar as regras gera punição.' },
+      { key: 'anuncios', name: '📢・anúncios', topic: 'Avisos importantes da equipe.' },
+      { key: 'novidades', name: '📰・novidades', topic: 'Novidades e atualizações do bot.' },
+      { key: 'guia', name: '🧭・guia-do-servidor', topic: 'O mapa de todos os canais e para que serve cada um.' },
+      { key: 'eventos', name: '🎉・eventos', topic: 'Eventos, campeonatos e movimentações da comunidade.' },
+      { key: 'sorteios', name: '🎁・sorteios', topic: 'Sorteios abertos e seus resultados.' },
+      { key: 'parcerias', name: '🤝・parcerias', topic: 'Servidores e projetos parceiros.' }
+    ]
+  },
+  {
+    key: 'categoriaComunidade', name: '📁・comunidade', channels: [
+      { key: 'chatGeral', name: '💬・chat-geral', topic: 'Conversa livre. Mantenha o respeito.' },
+      { key: 'midia', name: '📸・mídia', topic: 'Fotos, vídeos e prints.' },
+      { key: 'memes', name: '😂・memes', topic: 'Memes e humor, sem ofender ninguém.' },
+      { key: 'comandosBot', name: '🤖・comandos-bot', topic: 'Use os comandos do bot aqui para não poluir os outros chats.' },
+      { key: 'sugestoes', name: '💡・sugestões', mode: 'readonly', topic: 'Envie ideias pelo botão do painel.' },
+      { key: 'enquetes', name: '📊・enquetes', mode: 'readonly', topic: 'Votações da comunidade.' },
+      { key: 'niveis', name: '⭐・níveis', mode: 'readonly', topic: 'Avisos de subida de nível.' },
+      { key: 'cargos', name: '🏷️・pegar-cargos', mode: 'readonly', topic: 'Escolha seus cargos de aviso e interesse pelos botões.' }
+    ]
+  },
+  {
+    key: 'categoriaJogos', name: '📁・jogos', channels: [
+      { key: 'chatGames', name: '🎮・chat-games', topic: 'Conversa sobre jogos.' },
+      { key: 'lfg', name: '🎲・procurar-grupo', topic: 'Procure gente para jogar junto.' },
+      { key: 'clipes', name: '🏆・clipes', topic: 'Suas melhores jogadas.' }
+    ]
+  },
+  {
+    key: 'categoriaCriatividade', name: '📁・criatividade', channels: [
+      { key: 'dev', name: '💻・dev-e-código', topic: 'Programação, sites, bots e tecnologia.' },
+      { key: 'design', name: '🎨・design-e-arte', topic: 'Design, edição, desenhos e artes.' },
+      { key: 'portfolio', name: '🌐・portfólios', topic: 'Mostre seus trabalhos e receba feedback.' }
+    ]
+  },
+  {
+    key: 'categoriaEconomia', name: '📁・economia', channels: [
+      { key: 'economia', name: '💰・economia', topic: 'Comandos de economia: /saldo, /trabalhar, /rank...' },
+      { key: 'empresas', name: '🏢・empresas', topic: 'Crie e administre sua empresa com /empresa.' },
+      { key: 'cassino', name: '🎰・cassino', topic: 'Apostas: /coinflip, /blackjack e /slots.' },
+      { key: 'loja', name: '🛒・loja', topic: 'Compre itens, VIP e cargo personalizado com /loja.' }
+    ]
+  },
+  {
+    key: 'categoriaVoz', name: '📁・canais de voz', channels: [
+      { key: 'vozGeral', name: '🔊・Conversa geral', voice: true, topic: 'Papo livre por voz.' },
+      { key: 'vozDois', name: '🔊・Sala reservada', voice: true, topic: 'Para conversas mais reservadas.' },
+      { key: 'vozGames1', name: '🎮・Games 1', voice: true, topic: 'Jogue junto por voz.' },
+      { key: 'vozGames2', name: '🎮・Games 2', voice: true, topic: 'Jogue junto por voz.' },
+      { key: 'vozMusica', name: '🎵・Música', voice: true, topic: 'Ouça música com a galera.' },
+      { key: 'vozAfk', name: '💤・AFK', voice: true, topic: 'Quem fica parado é movido para cá.' }
+    ]
+  },
+  {
+    key: 'categoriaStaff', name: '📁・staff', mode: 'staff', channels: [
+      { key: 'staffChat', name: '💬・chat-staff', topic: 'Conversa privada da equipe.' },
+      { key: 'comandosStaff', name: '🤖・comandos-staff', topic: 'Comandos de moderação e testes do bot.' },
+      { key: 'logs', name: '📋・logs-gerais', topic: 'Logs gerais do bot e relatório do setup.' },
+      { key: 'punicoes', name: '🛡️・logs-punições', topic: 'Bans, kicks, mutes e avisos.' },
+      { key: 'mensagens', name: '🗑️・logs-mensagens', topic: 'Mensagens apagadas e editadas.' },
+      { key: 'vozStaff', name: '🔒・Reunião staff', voice: true, topic: 'Reunião da equipe.' }
+    ]
+  }
+];
+
+/** Painel "🧭 Guia do Servidor": lista de categorias e canais públicos gerada a partir do layout. */
+function buildGuideEmbed(made) {
+  const embed = new EmbedBuilder()
+    .setColor(0x5865F2)
+    .setTitle('🧭 Guia do Servidor')
+    .setDescription('Veja onde fica cada coisa. Para suporte ou denúncias, abra um ticket no canal de atendimento.');
+  for (const cat of SERVER_LAYOUT.filter((c) => c.mode !== 'staff')) {
+    const linhas = cat.channels.filter((c) => made[c.key]).map((c) => `<#${made[c.key].id}> — ${c.topic}`);
+    if (linhas.length) embed.addFields({ name: cat.name.replace('📁・', '📂 '), value: truncate(linhas.join('\n'), 1024) });
+  }
+  return embed;
+}
+
+/** Painel de botões para pegar/tirar cargos de interesse (só cargos criados pelo setup, sem permissões). */
+function buildSelfRolesPanel(guild, cfg) {
+  const itens = Object.entries(SELF_ROLES).filter(([key]) => guild.roles.cache.has(cfg.setupRoles?.[key]));
+  const embed = new EmbedBuilder()
+    .setColor(0x9B59B6)
+    .setTitle('🏷️ Escolha seus cargos')
+    .setDescription(itens.map(([, r]) => `${r.emoji} **${r.label}** — ${r.desc}`).join('\n') + '\n\nClique no botão para pegar o cargo e clique de novo para tirar.');
+  const rows = [];
+  for (let i = 0; i < itens.length; i += 5) {
+    rows.push(new ActionRowBuilder().addComponents(...itens.slice(i, i + 5).map(([key, r]) => new ButtonBuilder()
+      .setCustomId(`selfrole:${key}`).setLabel(r.label).setEmoji(r.emoji).setStyle(ButtonStyle.Secondary))));
+  }
+  return { embeds: [embed], components: rows, allowedMentions: MENTIONS_NONE };
+}
+
 async function setupEssentialChannels(guild, client) {
   const cfg = ensureGuildConfig(guild.id);
+  const P = PermissionFlagsBits;
   const botId = client.user.id;
-  const botFullAccess = [
-    PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages,
-    PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.EmbedLinks,
-    PermissionFlagsBits.AttachFiles, PermissionFlagsBits.ManageChannels,
-    PermissionFlagsBits.ManageMessages
-  ];
+  const everyone = guild.roles.everyone.id;
+  const botFullAccess = [P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.EmbedLinks, P.AttachFiles, P.ManageChannels, P.ManageMessages];
+  const staffIds = [...staffRoleIds(guild, cfg)];
+
+  // Todos leem; só a equipe escreve (a equipe também consegue postar avisos, anúncios, enquetes...)
   const readOnly = [
-    {
-      id: guild.roles.everyone.id,
-      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory],
-      deny: [PermissionFlagsBits.SendMessages]
-    },
-    { id: botId, allow: botFullAccess }
-  ];
-  const staffOnly = [
-    { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+    { id: everyone, allow: [P.ViewChannel, P.ReadMessageHistory], deny: [P.SendMessages] },
     { id: botId, allow: botFullAccess },
-    ...[...staffRoleIds(guild, cfg)].map((id) => ({ id, allow: TICKET_BASE_PERMS })),
+    ...staffIds.map((id) => ({ id, allow: [P.SendMessages, P.EmbedLinks, P.AttachFiles] }))
+  ];
+  // Privado da equipe
+  const staffOnly = [
+    { id: everyone, deny: [P.ViewChannel] },
+    { id: botId, allow: botFullAccess },
+    ...staffIds.map((id) => ({ id, allow: TICKET_BASE_PERMS })),
     ...(cfg.adminUsers || []).map((id) => ({ id, allow: TICKET_BASE_PERMS }))
+  ];
+  const staffVoice = [
+    { id: everyone, deny: [P.ViewChannel] },
+    { id: botId, allow: [P.ViewChannel, P.ManageChannels] },
+    ...staffIds.map((id) => ({ id, allow: [P.ViewChannel] })),
+    ...(cfg.adminUsers || []).map((id) => ({ id, allow: [P.ViewChannel] }))
   ];
 
   let criados = 0;
+  const made = {};
   const ensure = async (key, options) => {
     const result = await ensureSetupChannel(guild, cfg, key, options);
     if (result.criado) criados++;
     return result.channel;
   };
-  const category = (key, name, privateStaff = false) => ensure(key, {
-    name, type: ChannelType.GuildCategory, ...(privateStaff ? { permissionOverwrites: staffOnly } : {})
-  });
-  const text = (key, name, parent, readonly = false, privateStaff = false) => ensure(key, {
-    name, type: ChannelType.GuildText, parent: parent.id,
-    ...(readonly || privateStaff ? { permissionOverwrites: privateStaff ? staffOnly : readOnly } : {})
-  });
 
-  const informacoes = await category('categoriaInformacoes', '📁・informações');
-  const comunidade = await category('categoriaComunidade', '📁・comunidade');
-  const staff = await category('categoriaStaff', '📁・staff', true);
-  const voz = await category('categoriaVoz', '📁・canais de voz');
+  for (const cat of SERVER_LAYOUT) {
+    const parent = await ensure(cat.key, {
+      name: cat.name, type: ChannelType.GuildCategory,
+      ...(cat.mode === 'staff' ? { permissionOverwrites: staffOnly } : {})
+    });
+    made[cat.key] = parent;
+    for (const def of cat.channels) {
+      const mode = def.mode || cat.mode || 'open';
+      const overwrites = mode === 'readonly' ? readOnly : mode === 'staff' ? (def.voice ? staffVoice : staffOnly) : null;
+      made[def.key] = await ensure(def.key, {
+        name: def.name,
+        type: def.voice ? ChannelType.GuildVoice : ChannelType.GuildText,
+        parent: parent.id,
+        ...(def.topic && !def.voice ? { topic: def.topic } : {}),
+        ...(overwrites ? { permissionOverwrites: overwrites } : {})
+      });
+    }
+  }
 
-  const regras = await text('regras', '📖・regras', informacoes, true);
-  await text('anuncios', '📢・anúncios', informacoes, true);
-  const novidades = await text('novidades', '📰・novidades', informacoes, true);
-  const welcome = await text('welcome', '👋・boas-vindas', informacoes, true);
-  await text('chatGeral', '💬・chat-geral', comunidade);
-  const sugestoes = await text('sugestoes', '💡・sugestões', comunidade, true);
-  const niveis = await text('niveis', '⭐・níveis', comunidade, true);
-  const logs = await text('logs', '📋・logs-gerais', staff, false, true);
-  const punicoes = await text('punicoes', '🛡️・logs-punições', staff, false, true);
-  const mensagens = await text('mensagens', '🗑️・logs-mensagens', staff, false, true);
-  await ensure('vozGeral', { name: '🔊・Conversa geral', type: ChannelType.GuildVoice, parent: voz.id });
-  await ensure('vozDois', { name: '🔊・Sala reservada', type: ChannelType.GuildVoice, parent: voz.id });
-
-  cfg.welcomeChannel = welcome.id;
-  cfg.suggestionChannel = sugestoes.id;
-  cfg.logsChannel = logs.id;
-  cfg.punicoesChannel = punicoes.id;
-  cfg.msgDeleteChannel = mensagens.id;
-  cfg.levelChannel = niveis.id;
-  cfg.changelogChannelId = novidades.id;
+  cfg.welcomeChannel = made.welcome.id;
+  cfg.suggestionChannel = made.sugestoes.id;
+  cfg.logsChannel = made.logs.id;
+  cfg.punicoesChannel = made.punicoes.id;
+  cfg.msgDeleteChannel = made.mensagens.id;
+  cfg.levelChannel = made.niveis.id;
+  cfg.changelogChannelId = made.novidades.id;
   cfg.automod ??= true;
   cfg.setupCompletedAt = Date.now();
   saveConfig();
+
+  // Canal AFK do servidor
+  if (made.vozAfk) {
+    await guild.setAFKChannel(made.vozAfk, 'Setup: canal AFK').catch(() => {});
+    await guild.setAFKTimeout(300, 'Setup: tempo AFK').catch(() => {});
+  }
 
   const hasBotMessage = async (channel, predicate) => {
     const messages = await channel.messages.fetch({ limit: 20 }).catch(() => null);
     return !!messages?.some((m) => m.author.id === botId && predicate(m));
   };
-  if (!await hasBotMessage(regras, (m) => m.embeds.some((e) => e.title?.includes('Regras do Servidor')))) {
-    await regras.send({ embeds: [new EmbedBuilder().setColor(0x3498DB).setTitle('📖 Regras do Servidor').setDescription([
+  if (!await hasBotMessage(made.regras, (m) => m.embeds.some((e) => e.title?.includes('Regras do Servidor')))) {
+    await made.regras.send({ embeds: [new EmbedBuilder().setColor(0x3498DB).setTitle('📖 Regras do Servidor').setDescription([
       '**1.** Respeite todos os membros.',
       '**2.** Não faça spam, flood ou divulgação sem autorização.',
       '**3.** Não compartilhe conteúdo ilegal, ofensivo ou inadequado.',
@@ -671,18 +889,302 @@ async function setupEssentialChannels(guild, client) {
       '**6.** Para suporte ou denúncias, abra um ticket privado.'
     ].join('\n'))], allowedMentions: MENTIONS_NONE });
   }
-  if (!await hasBotMessage(sugestoes, (m) => m.components.some((row) => row.components.some((c) => c.customId === 'btn_abrir_sugestao')))) {
-    await sendSuggestionPanel(sugestoes);
+  if (!await hasBotMessage(made.sugestoes, (m) => m.components.some((row) => row.components.some((c) => c.customId === 'btn_abrir_sugestao')))) {
+    await sendSuggestionPanel(made.sugestoes);
   }
-  if (!await hasBotMessage(welcome, (m) => m.components.some((row) => row.components.some((c) => c.customId === 'verify_btn')))) {
-    await sendVerifyPanel(welcome, guild.roles.cache.get(cfg.verifyRole));
+  if (!await hasBotMessage(made.welcome, (m) => m.components.some((row) => row.components.some((c) => c.customId === 'verify_btn')))) {
+    await sendVerifyPanel(made.welcome, guild.roles.cache.get(cfg.verifyRole));
   }
   const { CHANGELOG, buildPage } = require('./changelog');
-  if (!await hasBotMessage(novidades, (m) => m.embeds.some((e) => e.title?.includes(`Versão ${CHANGELOG[0].version}`)))) {
-    await novidades.send(buildPage(0));
+  if (!await hasBotMessage(made.novidades, (m) => m.embeds.some((e) => e.title?.includes(`Versão ${CHANGELOG[0].version}`)))) {
+    await made.novidades.send(buildPage(0));
+  }
+  if (!await hasBotMessage(made.guia, (m) => m.embeds.some((e) => e.title?.includes('Guia do Servidor')))) {
+    await made.guia.send({ embeds: [buildGuideEmbed(made)], allowedMentions: MENTIONS_NONE });
+  }
+  if (!await hasBotMessage(made.cargos, (m) => m.components.some((row) => row.components.some((c) => c.customId?.startsWith('selfrole:'))))) {
+    await made.cargos.send(buildSelfRolesPanel(guild, cfg));
   }
 
-  return { criados, canais: { regras, novidades, welcome, sugestoes, logs } };
+  return { criados, made, canais: { regras: made.regras, novidades: made.novidades, welcome: made.welcome, sugestoes: made.sugestoes, logs: made.logs } };
+}
+
+/** Botões do painel de cargos de interesse. */
+async function handleSelfRole(interaction) {
+  const key = interaction.customId.slice('selfrole:'.length);
+  const { guild, member } = interaction;
+  const roleId = SELF_ROLES[key] ? getGuildConfig(guild.id).setupRoles?.[key] : null;
+  const role = roleId ? guild.roles.cache.get(roleId) : null;
+  if (!role || role.managed) return interaction.reply(eph('❌ Esse cargo não existe mais. Peça à staff para rodar `/setup`.'));
+  if (role.permissions.bitfield !== 0n) return interaction.reply(eph('❌ Esse cargo tem permissões e não pode ser pego por botão. Avise a staff.'));
+  try {
+    if (member.roles.cache.has(role.id)) {
+      await member.roles.remove(role.id, 'Painel de cargos');
+      return interaction.reply(eph(`✅ Cargo **${role.name}** removido.`));
+    }
+    await member.roles.add(role.id, 'Painel de cargos');
+    return interaction.reply(eph(`✅ Cargo **${role.name}** adicionado!`));
+  } catch (_) {
+    return interaction.reply(eph('❌ Não consegui mexer no seu cargo. Meu cargo precisa ficar acima dos cargos de interesse.'));
+  }
+}
+
+/* ============================================================
+ *  SETUP COMPLETO: apaga canais e cargos e recria tudo do zero
+ * ============================================================ */
+const rebuilding = new Set();        // servidores com setup em andamento
+const pendingRebuild = new Map();    // servidor -> { userId, expires } (confirmação pendente)
+const RESET_KEYS = [
+  'setupRoles', 'setupChannels', 'ticketStaffRoles', 'ticketCategoryId', 'ticketPanelChannelId', 'ticketLogChannelId',
+  'duvidasChannel', 'denunciasChannel', 'welcomeChannel', 'suggestionChannel', 'logsChannel', 'punicoesChannel',
+  'msgDeleteChannel', 'levelChannel', 'changelogChannelId', 'autoRole', 'verifyRole', 'levelRoles', 'adminRoles'
+];
+
+/** Só o dono do servidor ou quem tem Administrador pode apagar e recriar tudo. */
+function canRebuildServer(member) {
+  return !!member && (member.id === member.guild.ownerId || member.permissions.has(PermissionFlagsBits.Administrator));
+}
+
+function confirmRebuildPayload(userId) {
+  const canais = SERVER_LAYOUT.reduce((n, c) => n + c.channels.length, 0) + 2;
+  const embed = new EmbedBuilder()
+    .setColor(0xE74C3C)
+    .setTitle('⚠️ Apagar TUDO e recriar o servidor do zero?')
+    .setDescription([
+      '🗑️ **Apaga todos os canais e cargos** (menos o que o Discord não permite apagar e os itens protegidos abaixo).',
+      '🛡️ **Protegidos:** o canal de backup do bot e os cargos personalizados/VIP comprados na loja.',
+      `🏗️ **Recria:** ${Object.keys(SETUP_ROLES).length - 1} cargos + cargos de nível, ${SERVER_LAYOUT.length + 1} categorias e ${canais} canais, logs, tickets, regras, verificação, sugestões, guia e painéis, com as permissões de cada cargo.`,
+      '👥 **Equipe:** quem tinha cargo com nome equivalente (dono, sub dono, coordenador, hmod, moderador, suporte...) recebe o cargo novo. Cargos antigos fora desse modelo não voltam.',
+      '',
+      '**Isso não pode ser desfeito.** Esta confirmação vale por 60 segundos.'
+    ].join('\n'));
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`setup:confirm:${userId}`).setLabel('Apagar tudo e recriar').setEmoji('🗑️').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(`setup:cancel:${userId}`).setLabel('Cancelar').setStyle(ButtonStyle.Secondary)
+  );
+  return { embeds: [embed], components: [row] };
+}
+
+async function sendRebuildNotice(guild, user, payload) {
+  const cfg = getGuildConfig(guild.id);
+  const me = guild.members.me;
+  const canal = guild.channels.cache.get(cfg.logsChannel)
+    || guild.channels.cache.find((c) => c.type === ChannelType.GuildText && c.permissionsFor(me)?.has(['ViewChannel', 'SendMessages']));
+  let enviado = null;
+  if (canal) enviado = await canal.send({ ...payload, content: `<@${user.id}>`, allowedMentions: { users: [user.id] } }).catch(() => null);
+  await user.send(payload).catch(() => {});
+  return enviado;
+}
+
+/** Devolve cargos (membro/bots, equipe equivalente e cargo de nível) a uma lista de membros. */
+async function restoreMemberRoles(guild, lista, staffMap, extras) {
+  const cfg = getGuildConfig(guild.id);
+  const { levelOf, tierRoleIdFor } = require('./levels');
+  let ok = 0;
+  let falhas = 0;
+  for (const m of lista) {
+    const ids = new Set();
+    const base = cfg.setupRoles?.[m.user.bot ? 'bots' : 'membro'];
+    if (base) ids.add(base);
+    for (const k of staffMap.get(m.id) || []) if (cfg.setupRoles?.[k]) ids.add(cfg.setupRoles[k]);
+    if (m.id === guild.ownerId && cfg.setupRoles?.dono) ids.add(cfg.setupRoles.dono);
+    if (extras.get(m.id)) ids.add(extras.get(m.id));
+    if (!m.user.bot) {
+      const nivel = tierRoleIdFor(guild, levelOf(guild.id, m.id));
+      if (nivel) ids.add(nivel);
+    }
+    const faltam = [...ids].filter((id) => guild.roles.cache.has(id) && !m.roles.cache.has(id));
+    if (!faltam.length) continue;
+    try {
+      await m.roles.add(faltam, 'Setup completo: devolvendo cargos');
+      ok++;
+    } catch (_) {
+      falhas++;
+    }
+  }
+  return { ok, falhas };
+}
+
+/** Quem chama já deve ter travado o servidor em `rebuilding`; o finally libera. */
+async function rebuildServer(guild, client, user) {
+  const inicio = Date.now();
+  const rel = { canaisApagados: 0, canaisMantidos: [], cargosApagados: 0, cargosMantidos: 0, cargosAcima: 0, avisos: [] };
+  try {
+    const { isBackupChannel } = require('./backup');
+    const { paidRoleIds } = require('./economy');
+    const cfg = ensureGuildConfig(guild.id);
+    await guild.roles.fetch().catch(() => {});
+    await guild.channels.fetch().catch(() => {});
+
+    /* 1) Foto do que existe agora (para devolver a equipe depois) */
+    let membros = guild.members.cache;
+    try {
+      membros = await guild.members.fetch();
+    } catch (_) {
+      rel.avisos.push('Não consegui carregar todos os membros; só devolvi cargos a quem estava em cache.');
+    }
+    const staffMap = new Map();
+    for (const m of membros.values()) {
+      const chaves = new Set();
+      for (const r of m.roles.cache.values()) {
+        const k = r.id === guild.id ? null : matchRoleKey(r.name);
+        if (k && STAFF_KEYS.includes(k)) chaves.add(k);
+      }
+      if (chaves.size) staffMap.set(m.id, chaves);
+    }
+    const invoker = membros.get(user.id) || await guild.members.fetch(user.id).catch(() => null);
+    const extras = new Map();
+    // Quem pediu o setup e era Administrador por um cargo que não volta não pode ficar trancado para fora
+    const chavesDoInvoker = staffMap.get(user.id);
+    const invokerPrecisaAdmin = !!invoker && guild.ownerId !== user.id
+      && invoker.permissions.has(PermissionFlagsBits.Administrator)
+      && !chavesDoInvoker?.has('dono') && !chavesDoInvoker?.has('subdono');
+
+    /* 2) Protegidos: canal de backup do bot e cargos pagos na loja */
+    const cargosPagos = paidRoleIds(guild.id);
+    const protegidosCanais = new Set([...guild.channels.cache.values()].filter((c) => isBackupChannel(c)).map((c) => c.id));
+
+    /* 3) Apaga canais (canais primeiro, categorias por último) */
+    const todos = [...guild.channels.cache.values()].filter((c) => !c.isThread?.());
+    const ordem = [
+      ...todos.filter((c) => c.type !== ChannelType.GuildCategory),
+      ...todos.filter((c) => c.type === ChannelType.GuildCategory)
+    ];
+    for (const canal of ordem) {
+      if (protegidosCanais.has(canal.id)) { rel.canaisMantidos.push(canal.name); continue; }
+      try {
+        await canal.delete('Setup completo: recriando o servidor do zero');
+        rel.canaisApagados++;
+      } catch (_) {
+        rel.canaisMantidos.push(canal.name); // ex.: canais exigidos por servidores de Comunidade
+      }
+    }
+
+    /* 4) Apaga cargos (não mexe em cargos de bots/integrações, nem nos pagos na loja, nem nos acima do bot) */
+    for (const role of [...guild.roles.cache.values()].filter((r) => r.id !== guild.id && !r.managed)) {
+      if (cargosPagos.has(role.id)) { rel.cargosMantidos++; continue; }
+      if (!role.editable) { rel.cargosMantidos++; rel.cargosAcima++; continue; }
+      try {
+        await role.delete('Setup completo: recriando o servidor do zero');
+        rel.cargosApagados++;
+      } catch (_) {
+        rel.cargosMantidos++;
+      }
+    }
+
+    /* 5) Zera as configurações que apontavam para canais e cargos antigos */
+    for (const k of RESET_KEYS) delete cfg[k];
+    cfg.setupRoles = {};
+    cfg.setupChannels = {};
+    for (const [id, ticket] of Object.entries(ticketBucket(guild.id))) {
+      if (ticket.status === 'open') delete ticketBucket(guild.id)[id]; // os canais desses tickets foram apagados
+    }
+    ticketStore.save();
+    saveConfig();
+
+    // Canais que o Discord não deixa apagar (Comunidade) viram o canal de regras / novidades
+    const reaproveitar = [[guild.rulesChannel, 'regras'], [guild.publicUpdatesChannel, 'novidades']];
+    for (const [canal, key] of reaproveitar) {
+      if (canal?.type !== ChannelType.GuildText || !guild.channels.cache.has(canal.id)) continue;
+      const def = SERVER_LAYOUT.flatMap((c) => c.channels).find((c) => c.key === key);
+      cfg.setupChannels[key] = canal.id;
+      await canal.setName(def.name, 'Setup completo').catch(() => {});
+    }
+    saveConfig();
+
+    /* 6) Recria tudo */
+    const cargos = await setupEssentialRoles(guild, { avoid: cargosPagos, baseline: true });
+    if (cargos.reduzidos.length) {
+      rel.avisos.push(`Sem a permissão **Administrador** no bot, criei com permissões reduzidas: ${cargos.reduzidos.join(', ')}.`);
+    }
+    if (invokerPrecisaAdmin && cfg.setupRoles.subdono) extras.set(user.id, cfg.setupRoles.subdono);
+    const estrutura = await setupEssentialChannels(guild, client);
+    await setupTicketSystem(guild, client);
+
+    // O canal de backup (se foi mantido) vai para a categoria da equipe
+    const categoriaStaff = estrutura.made.categoriaStaff;
+    for (const id of protegidosCanais) {
+      await guild.channels.cache.get(id)?.setParent(categoriaStaff.id, { lockPermissions: false }).catch(() => {});
+    }
+
+    /* 7) Devolve a equipe e o dono primeiro (assim quem pediu já enxerga os canais privados) */
+    const prioridade = [...membros.values()].filter((m) => staffMap.has(m.id) || m.id === user.id || m.id === guild.ownerId);
+    const idsPrioridade = new Set(prioridade.map((m) => m.id));
+    const restantes = [...membros.values()].filter((m) => !idsPrioridade.has(m.id)).slice(0, 1000);
+    const parte1 = await restoreMemberRoles(guild, prioridade, staffMap, extras);
+
+    /* 8) Relatório (no canal de logs novo e na DM de quem pediu) */
+    const contagem = STAFF_KEYS.map((k) => [k, [...staffMap.values()].filter((s) => s.has(k)).length]).filter(([, n]) => n > 0)
+      .map(([k, n]) => `${SETUP_ROLES[k].name}: **${n}**`);
+    const campos = [
+      { name: '🗑️ Apagado', value: `${rel.canaisApagados} canais e ${rel.cargosApagados} cargos`, inline: true },
+      { name: '🏗️ Criado', value: `${cargos.criados} cargos (equipe, níveis e interesse)\n${estrutura.criados} canais/categorias + tickets`, inline: true },
+      { name: '👥 Equipe devolvida', value: contagem.length ? contagem.join('\n') : 'Ninguém tinha cargos equivalentes.', inline: false }
+    ];
+    const mantidos = [];
+    if (rel.canaisMantidos.length) mantidos.push(`Canais: ${rel.canaisMantidos.slice(0, 6).map((n) => `\`${n}\``).join(', ')}${rel.canaisMantidos.length > 6 ? '…' : ''}`);
+    if (rel.cargosMantidos) mantidos.push(`${rel.cargosMantidos} cargo(s) (pagos na loja${rel.cargosAcima ? ` ou acima do meu cargo: ${rel.cargosAcima}` : ''})`);
+    if (mantidos.length) campos.push({ name: '🛡️ Mantido', value: truncate(mantidos.join('\n'), 1024), inline: false });
+    if (rel.avisos.length) campos.push({ name: '⚠️ Atenção', value: truncate(rel.avisos.join('\n'), 1024), inline: false });
+    campos.push({
+      name: '📌 Próximos passos',
+      value: 'Deixe o **meu cargo no topo** da lista de cargos. Cargos antigos fora do modelo novo não voltaram: crie e atribua à mão se precisar. Membros e bots estão recebendo os cargos em segundo plano.',
+      inline: false
+    });
+    const relatorio = new EmbedBuilder().setColor(0x2ECC71).setTitle('✅ Servidor recriado do zero')
+      .setDescription(`Cargos, canais, logs, tickets, painéis e permissões configurados em ${Math.round((Date.now() - inicio) / 1000)}s.`)
+      .addFields(campos).setTimestamp();
+    const mensagem = await sendRebuildNotice(guild, user, { embeds: [relatorio] });
+
+    // O canal de backup guarda a configuração: salva já com os IDs novos
+    require('./backup').pushBackup(client, { force: true }).catch(() => {});
+
+    /* 9) Resto dos membros em segundo plano */
+    const parte2 = await restoreMemberRoles(guild, restantes, staffMap, extras);
+    const total = parte1.ok + parte2.ok;
+    const falhas = parte1.falhas + parte2.falhas;
+    if (mensagem) {
+      await mensagem.channel.send({ content: `👥 Cargos devolvidos a **${total}** membro(s)${falhas ? ` • **${falhas}** falha(s) (meu cargo precisa ficar acima dos cargos novos)` : ''}.`, allowedMentions: MENTIONS_NONE }).catch(() => {});
+    }
+  } catch (err) {
+    console.error('[setup completo]', err);
+    const aviso = new EmbedBuilder().setColor(0xE74C3C).setTitle('❌ O setup completo parou no meio')
+      .setDescription(`${describeError(err) || 'Erro inesperado.'}\n\nO que já foi apagado/criado continua assim. Rode **\`/setup acao:atualizar\`** para completar o que faltou (ele não apaga nada).`);
+    await sendRebuildNotice(guild, user, { embeds: [aviso] }).catch(() => {});
+  } finally {
+    rebuilding.delete(guild.id);
+  }
+}
+
+/** Botões "Apagar tudo e recriar" / "Cancelar" do /setup. */
+async function handleSetupButton(interaction) {
+  const [, acao, userId] = interaction.customId.split(':');
+  const { guild } = interaction;
+  if (interaction.user.id !== userId) return interaction.reply(eph('❌ Só quem pediu o setup pode usar estes botões.'));
+
+  if (acao === 'cancel') {
+    pendingRebuild.delete(guild.id);
+    return interaction.update({ content: '✅ Setup cancelado. Nada foi alterado.', embeds: [], components: [] });
+  }
+  if (acao !== 'confirm') return;
+
+  const pendente = pendingRebuild.get(guild.id);
+  if (!pendente || pendente.userId !== userId || pendente.expires < Date.now()) {
+    pendingRebuild.delete(guild.id);
+    return interaction.update({ content: '⌛ A confirmação expirou. Use `/setup` de novo.', embeds: [], components: [] });
+  }
+  if (!canRebuildServer(interaction.member)) {
+    return interaction.reply(eph('❌ Só o dono do servidor ou quem tem **Administrador** pode fazer isso.'));
+  }
+  if (rebuilding.has(guild.id)) return interaction.reply(eph('⚠️ Já existe um setup em andamento neste servidor.'));
+
+  pendingRebuild.delete(guild.id);
+  rebuilding.add(guild.id); // trava já, antes de qualquer espera (rebuildServer libera no final)
+  await interaction.update({
+    content: '🔄 **Recriando o servidor...** Isso leva alguns minutos. Quando terminar, o relatório aparece no canal de logs da equipe e na sua DM.',
+    embeds: [], components: []
+  }).catch(() => {});
+  rebuildServer(guild, interaction.client, interaction.user).catch((err) => console.error('[setup completo]', err));
 }
 
 async function setupTicketSystem(guild, client) {
@@ -908,12 +1410,12 @@ async function createTicket(interaction, tipo) {
       .setFooter({ text: 'O autor precisa avaliar o atendimento antes do fechamento.' })
       .setTimestamp();
 
-    const staffRoles = [...staffRoleIds(guild, cfg)].slice(0, 10);
+    const suporte = [...supportRoleIds(guild, cfg)].slice(0, 10);
     await ticketChannel.send({
-      content: [`<@${member.id}>`, ...staffRoles.map((id) => `<@&${id}>`)].join(' '),
+      content: [`<@${member.id}>`, ...suporte.map((id) => `<@&${id}>`)].join(' '),
       embeds: [controlEmbed],
       components: ticketControlRows(),
-      allowedMentions: { users: [member.id], roles: staffRoles }
+      allowedMentions: { users: [member.id], roles: suporte }
     });
     await interaction.editReply({ content: `✅ Seu ticket foi criado: <#${ticketChannel.id}>` });
   } catch (err) {
@@ -1347,25 +1849,42 @@ const COMMANDS = {
   async setup(ctx) {
     const { interaction, guild, member } = ctx;
     if (await deny(ctx)) return;
+    const acao = interaction.options.getString('acao') || 'completo';
+
+    // Servidor completo: apaga tudo e recria. Pede confirmação e só vale para o dono ou Administrador.
+    if (acao === 'completo') {
+      if (!canRebuildServer(member)) {
+        return interaction.reply(eph('❌ O setup completo apaga e recria o servidor inteiro, então só o **dono do servidor** ou quem tem **Administrador** pode usar. Para só completar o que falta, use `/setup acao:atualizar`.'));
+      }
+      const me = guild.members.me;
+      if (!me?.permissions.has(PermissionFlagsBits.ManageChannels) || !me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+        return interaction.reply(eph('❌ Eu preciso das permissões **Gerenciar Canais** e **Gerenciar Cargos** (ou Administrador) para recriar o servidor.'));
+      }
+      if (rebuilding.has(guild.id)) return interaction.reply(eph('⚠️ Já existe um setup em andamento neste servidor.'));
+      pendingRebuild.set(guild.id, { userId: interaction.user.id, expires: Date.now() + 60_000 });
+      return interaction.reply({ ...confirmRebuildPayload(interaction.user.id), flags: EPHEMERAL });
+    }
+
     if (!hasFullAccess(member, getGuildConfig(guild.id))
       && (!member.permissions.has(PermissionFlagsBits.ManageChannels) || !member.permissions.has(PermissionFlagsBits.ManageRoles))) {
-      return interaction.reply(eph('❌ O setup completo também exige as permissões **Gerenciar Canais** e **Gerenciar Cargos**.'));
+      return interaction.reply(eph('❌ O setup também exige as permissões **Gerenciar Canais** e **Gerenciar Cargos**.'));
     }
-    const acao = interaction.options.getString('acao') || 'completo';
+    if (rebuilding.has(guild.id)) return interaction.reply(eph('⚠️ Já existe um setup em andamento neste servidor.'));
     await interaction.deferReply({ flags: EPHEMERAL });
 
     try {
       const resposta = [];
-      if (acao === 'completo') {
+      if (acao === 'atualizar') {
         const cargos = await setupEssentialRoles(guild);
-        resposta.push(`👥 Cargos essenciais configurados: **${cargos.criados} criado(s)** e os demais reutilizados.`);
+        resposta.push(`👥 Cargos configurados: **${cargos.criados} criado(s)** e os demais reutilizados.`);
+        if (cargos.reduzidos.length) resposta.push(`⚠️ Sem a permissão Administrador no bot, criei com permissões reduzidas: ${cargos.reduzidos.join(', ')}.`);
         const estrutura = await setupEssentialChannels(guild, interaction.client);
         resposta.push(`🏗️ Estrutura do servidor: **${estrutura.criados} canal(is) criado(s)**, logs e comandos de configuração conectados.`);
       }
-      if (acao === 'completo' || acao === 'tickets') {
+      if (acao === 'atualizar' || acao === 'tickets') {
         resposta.push(await setupTicketSystem(guild, interaction.client));
       }
-      if (acao === 'completo' || acao === 'emojis') {
+      if (acao === 'atualizar' || acao === 'emojis') {
         const r = await decorateGuildChannels(guild);
         resposta.push(`✨ Emojis: **${r.alterados}** canal(is) atualizado(s)${r.falhas ? ` • **${r.falhas}** falha(s)` : ''}.`);
       }
@@ -1653,8 +2172,11 @@ async function handleButton(interaction) {
   const id = interaction.customId;
 
   const ownIds = ['verify_btn', 'btn_abrir_sugestao', 'create_ticket_duvida', 'create_ticket_denuncia', 'claim_ticket', 'close_ticket'];
-  if (!ownIds.includes(id) && !id.startsWith('rate_') && !id.startsWith('ticket:')) return;
+  if (!ownIds.includes(id) && !id.startsWith('rate_') && !id.startsWith('ticket:') && !id.startsWith('setup:') && !id.startsWith('selfrole:')) return;
   if (!interaction.guild) return interaction.reply(eph(GUILD_ONLY));
+
+  if (id.startsWith('setup:')) return handleSetupButton(interaction);
+  if (id.startsWith('selfrole:')) return handleSelfRole(interaction);
 
   if (id === 'verify_btn') {
     const roleId = getGuildConfig(interaction.guild.id).verifyRole;
