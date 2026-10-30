@@ -21,7 +21,7 @@ const {
 const { JsonStore } = require('./storage');
 const { EPHEMERAL, eph, truncate, unix, respond, describeError, fmtDateTime } = require('./utils');
 const { isStaff, checkAccess } = require('./perms');
-const { getGuildConfig, ensureGuildConfig, saveConfig, logEnabled, sendLog } = require('./perms'); // ou o arquivo correto de onde vêm essas funções de config/logs
+const { getGuildConfig, ensureGuildConfig, saveConfig, logEnabled, sendLog } = require('./perms');
 
 const TYPES = {
   duvida: { nome: 'Dúvida', emoji: '❓', cor: 0x00AE86, estilo: ButtonStyle.Primary, obrigaDetalhes: false, intro: 'Explique sua dúvida com o máximo de detalhes. Alguém da equipe vai responder em breve.' },
@@ -109,7 +109,7 @@ const pingRoleIds = (guild) => [...new Set([...(getGuildConfig(guild.id).ticketS
 /* ============================================================
  *  PAINEL
  * ============================================================ */
-const SlashCommandsBuilder = [
+const ticketSlashCommands = [
   new SlashCommandBuilder().setName('ticket').setDescription('Envia o painel de tickets (e define a categoria/equipe, se informado)')
     .addChannelOption(o => o.setName('categoria').setDescription('Categoria onde os canais dos tickets serão criados').setRequired(false).addChannelTypes(ChannelType.GuildCategory))
     .addRoleOption(o => o.setName('cargo').setDescription('Cargo da equipe de suporte (use de novo para remover)').setRequired(false)),
@@ -634,3 +634,4 @@ module.exports = {
   ticketSlashCommands, prefixOnlyNames, handledCommands, handleTicketsInteraction,
   handleTicketMessage, handleChannelDelete, startTicketScheduler, panelMessage, TYPES, closeTicket, gdata
 };
+
