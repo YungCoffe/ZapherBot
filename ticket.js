@@ -1,3 +1,4 @@
+/**
 Aqui está o seu arquivo ticket.js corrigido. Olhando o index.js, ele espera que o arquivo de tickets exporte as funções corretas de eventos (handleGuildMemberAdd, handleGuildMemberRemove, handleGuildMemberUpdate, handleMessageDelete, handleMessageDeleteBulk, handleMessageUpdate, handleGuildBanAdd, handleGuildBanRemove) e que o agendador se chame startScheduler (e não startTicketScheduler), além de exportar os slash commands como ticketSlashCommands (que o index.js mapeia como allSlashCommands).
 Corrigi as exportações e os nomes no final do ticket.js para ficarem 100% compatíveis com o seu index.js sem quebrar nada:
 'use strict';
