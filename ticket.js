@@ -115,6 +115,7 @@ const ticketSlashCommands = [
     .addRoleOption(o => o.setName('cargo').setDescription('Cargo da equipe de suporte (use de novo para remover)').setRequired(false)),
   new SlashCommandBuilder().setName('tickets').setDescription('Lista os tickets abertos e as estatísticas (staff)')
 ];
+const allSlashCommands = ticketSlashCommands;
 const prefixOnlyNames = ['tickets'];
 
 function panelMessage() {
@@ -631,7 +632,7 @@ async function handleTicketsInteraction(interaction) {
 }
 
 module.exports = {
-  ticketSlashCommands, prefixOnlyNames, handledCommands, handleTicketsInteraction,
+  ticketSlashCommands, allSlashCommands, prefixOnlyNames, handledCommands, handleTicketsInteraction,
   handleTicketMessage, handleChannelDelete, startTicketScheduler, panelMessage, TYPES, closeTicket, gdata
 };
 
