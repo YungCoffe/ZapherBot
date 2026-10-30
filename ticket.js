@@ -49,10 +49,10 @@ const BASE_PERMS = [
 const store = new JsonStore('tickets.json', { pretty: false, init: (d) => { d.guilds ??= {}; } });
 const gdata = (guildId) => (store.data.guilds[guildId] ??= { n: 0, open: {}, hist: [], stats: { abertos: 0, fechados: 0, notas: 0, soma: 0 } });
 
-const activity = new Map();    // canal -> última mensagem
+const activity = new Map();    // canal → última mensagem
 const warned = new Set();      // canais já avisados de inatividade
 const closing = new Set();
-const lastCreate = new Map();  // "servidor:usuário" -> quando
+const lastCreate = new Map();  // "servidor:usuário" → quando
 
 /** Registro do ticket deste canal. Tickets criados pela versão antiga ganham um registro na hora. */
 function recOf(channel) {
@@ -633,6 +633,7 @@ async function handleTicketsInteraction(interaction) {
 
 module.exports = {
   ticketSlashCommands, allSlashCommands, prefixOnlyNames, handledCommands, handleTicketsInteraction,
-  handleTicketMessage, handleChannelDelete, startTicketScheduler, panelMessage, TYPES, closeTicket, gdata
+  handleTicketMessage, handleChannelDelete, startTicketScheduler, panelMessage, TYPES, closeTicket, gdata,
+  handleGuildMemberAdd: () => {}, handleGuildMemberRemove: () => {}, handleGuildMemberUpdate: () => {}
 };
 
