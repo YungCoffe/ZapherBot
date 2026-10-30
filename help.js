@@ -14,13 +14,14 @@ const {
 const { EPHEMERAL, PREFIX, CURRENCY_NAME, eph, truncate, normalize, respond, describeError } = require('./utils');
 const { ALIASES } = require('./hybrid');
 const { lockLabel } = require('./perms');
+const { CHANGELOG } = require('./changelog');
 
 const CATEGORIES = [
   { emoji: '🛡️', nome: 'Moderação', cmds: ['ban', 'unban', 'kick', 'mute', 'unmute', 'warn', 'warnings', 'clearwarns', 'clear', 'calado', 'lock', 'unlock', 'slowmode', 'setcargo', 'nick', 'permnick', 'unpermnick', 'censura', 'automod'] },
-  { emoji: '⚙️', nome: 'Configuração', cmds: ['setwelcome', 'setlogs', 'setdenuncias', 'setduvidas', 'setpunicoes', 'setmsgdelete', 'setsuggestion', 'setnivel', 'logs', 'setverify', 'setautorole', 'delautorole', 'setadminrole', 'setadminuser', 'deladminrole', 'deladminuser', 'ia', 'backup'] },
-  { emoji: '💳', nome: 'Economia — Conta', cmds: ['saldo', 'patrimonio', 'depositar', 'sacar', 'transferir', 'perfil', 'rank', 'extrato', 'inventario', 'emprestimo', 'pagar', 'vender', 'cooldowns', 'addmoney', 'removemoney'] },
+  { emoji: '⚙️', nome: 'Configuração', cmds: ['setup', 'setwelcome', 'setlogs', 'setdenuncias', 'setduvidas', 'setpunicoes', 'setmsgdelete', 'setsuggestion', 'setnivel', 'logs', 'setverify', 'setautorole', 'delautorole', 'setadminrole', 'setadminuser', 'deladminrole', 'deladminuser', 'ia', 'backup'] },
+  { emoji: '💳', nome: 'Economia — Conta', cmds: ['saldo', 'depositar', 'sacar', 'transferir', 'perfil', 'rank', 'extrato', 'inventario', 'emprestimo', 'pagar', 'vender', 'cooldowns', 'addmoney', 'removemoney'] },
   { emoji: '💼', nome: 'Economia — Ganhos', cmds: ['daily', 'weekly', 'trabalhar', 'profissao', 'minerar', 'pescar', 'cacar', 'farmar', 'negocios', 'coletar', 'empresa', 'investir', 'loteria', 'caixa'] },
-  { emoji: '🎮', nome: 'Jogos & Loja', cmds: ['mercado', 'loja', 'painel-economia', 'apostar', 'slots', 'coinflip', 'roleta', 'blackjack', 'roubar', 'crime'] },
+  { emoji: '🎮', nome: 'Jogos & Loja', cmds: ['loja', 'apostar', 'slots', 'coinflip', 'roleta', 'blackjack', 'roubar', 'crime'] },
   { emoji: '⭐', nome: 'Níveis & Cargos', cmds: ['nivel', 'ranknivel', 'cargosnivel', 'painel-cargos'] },
   { emoji: '🎨', nome: 'Emojis & Figurinhas', cmds: ['criaremoji', 'criarfigurinha'] },
   { emoji: '🤖', nome: 'IA & Diversão', cmds: ['perguntar', '8ball', 'dado', 'escolher', 'enquete', 'lembrete', 'sorteio'] },
@@ -87,9 +88,10 @@ function buildPage(index) {
         '',
         pages.map((p) => `${p.emoji} **${p.nome}** — ${p.nomes.length}`).join('\n'),
         '',
-        `💡 **Todos os comandos funcionam com \`/\` ou com o prefixo \`${PREFIX}\`** (ex.: \`${PREFIX}saldo\`, \`${PREFIX}apostar tudo\`).`,
+        `💡 Os comandos funcionam com \`/\` e/ou prefixo \`${PREFIX}\`. \`backup\`, \`logs\` e \`setup\` usam somente o prefixo.`,
         `💰 A moeda do servidor é a **${CURRENCY_NAME}** (🪙). Em comandos de dinheiro com prefixo você pode usar \`5k\`, \`1.5m\`, \`tudo\` e \`metade\`.`,
         '🤖 Marque o bot ou use `/perguntar` para conversar com a IA.',
+        `📰 **Versão ${CHANGELOG[0].version}:** ${CHANGELOG[0].titulo}. Use \`/novidades\` ou o botão abaixo.`,
         '🔎 Detalhes de um comando: `/help comando:ban`'
       ].join('\n'))
       .setFooter({ text: `Página 1 de ${total} • Zapher Bot` });
@@ -114,7 +116,8 @@ function buildComponents(index) {
     ]);
   const botoes = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`help_page_${Math.max(0, atual - 1)}`).setLabel('Anterior').setEmoji('◀️').setStyle(ButtonStyle.Primary).setDisabled(atual === 0),
-    new ButtonBuilder().setCustomId(`help_page_${Math.min(total - 1, atual + 1)}`).setLabel('Próxima').setEmoji('▶️').setStyle(ButtonStyle.Primary).setDisabled(atual >= total - 1)
+    new ButtonBuilder().setCustomId(`help_page_${Math.min(total - 1, atual + 1)}`).setLabel('Próxima').setEmoji('▶️').setStyle(ButtonStyle.Primary).setDisabled(atual >= total - 1),
+    new ButtonBuilder().setCustomId('help_novidades').setLabel('Novidades').setEmoji('📰').setStyle(ButtonStyle.Secondary)
   );
   return [new ActionRowBuilder().addComponents(menu), botoes];
 }
@@ -131,7 +134,8 @@ function buildDetail(def) {
     return o.required ? `<${label}>` : `[${label}]`;
   }).join(' ')}`.trim();
 
-  const embed = new EmbedBuilder().setColor(0x3498DB).setTitle(`🔎 /${def.name}`).setDescription(def.description)
+  const comando = `${prefixOnly.has(def.name) ? PREFIX : '/'}${def.name}`;
+  const embed = new EmbedBuilder().setColor(0x3498DB).setTitle(`🔎 ${comando}`).setDescription(def.description)
     .addFields({ name: 'Uso', value: prefixOnly.has(def.name) ? `\`${uso(PREFIX)}\` *(só com prefixo)*` : `\`${uso('/')}\`\n\`${uso(PREFIX)}\`` });
   if (opts.length) {
     embed.addFields({
@@ -156,6 +160,10 @@ async function handleHelpInteraction(interaction) {
       const foco = normalize(interaction.options.getFocused());
       const nomes = [...defs.keys()].filter((n) => normalize(n).includes(foco)).slice(0, 25);
       return await interaction.respond(nomes.map((n) => ({ name: n, value: n })));
+    }
+
+    if (interaction.isButton() && interaction.customId === 'help_novidades') {
+      return await interaction.update(require('./changelog').buildPage(0));
     }
 
     if (interaction.isButton() && interaction.customId.startsWith('help_page_')) {

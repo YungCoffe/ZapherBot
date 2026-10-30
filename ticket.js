@@ -229,9 +229,9 @@ const allSlashCommands = [
   new SlashCommandBuilder().setName('lock').setDescription('Tranca o canal atual'),
   new SlashCommandBuilder().setName('unlock').setDescription('Destranca o canal atual'),
   new SlashCommandBuilder().setName('ticket').setDescription('Envia o painel de atendimento/denúncia'),
-  new SlashCommandBuilder().setName('setup').setDescription('Configura os tickets e padroniza os emojis dos canais')
-    .addStringOption(o => o.setName('acao').setDescription('Etapa que deseja executar (vazio = completa)').setRequired(false).addChoices(
-      { name: 'Configuração completa', value: 'completo' },
+  new SlashCommandBuilder().setName('setup').setDescription('Configura cargos, canais, logs, tickets e recursos essenciais do servidor')
+    .addStringOption(o => o.setName('acao').setDescription('Etapa que deseja executar (vazio = servidor completo)').setRequired(false).addChoices(
+      { name: 'Servidor completo', value: 'completo' },
       { name: 'Somente estrutura de tickets', value: 'tickets' },
       { name: 'Somente emojis dos canais', value: 'emojis' }
     )),
@@ -503,6 +503,7 @@ function staffRoleIds(guild, cfg = {}) {
     && ['Administrator', 'ManageMessages', 'ModerateMembers', 'ManageGuild', 'BanMembers', 'KickMembers'].some((p) => r.permissions.has(p));
   return new Set([
     ...guild.roles.cache.filter(ehStaff).keys(),
+    ...(cfg.ticketStaffRoles || []).filter((id) => guild.roles.cache.has(id)),
     ...(cfg.adminRoles || []).filter((id) => guild.roles.cache.has(id))
   ]);
 }
@@ -520,6 +521,168 @@ function ticketControlRows() {
     new ButtonBuilder().setCustomId('ticket:close').setLabel('Fechar ticket').setEmoji('🔒').setStyle(ButtonStyle.Danger)
   );
   return [ratingRow, actionRow];
+}
+
+const SETUP_ROLES = {
+  staff: {
+    name: '🛡️・Staff', color: 0x5865F2, hoist: true,
+    permissions: [PermissionFlagsBits.ManageMessages, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ModerateMembers]
+  },
+  moderador: {
+    name: '🔨・Moderador', color: 0xE67E22, hoist: true,
+    permissions: [PermissionFlagsBits.ManageMessages, PermissionFlagsBits.ModerateMembers, PermissionFlagsBits.BanMembers, PermissionFlagsBits.KickMembers, PermissionFlagsBits.ManageNicknames]
+  },
+  suporte: {
+    name: '🎫・Suporte', color: 0x3498DB, hoist: true,
+    permissions: [PermissionFlagsBits.ManageMessages, PermissionFlagsBits.ModerateMembers]
+  },
+  membro: { name: '✅・Membro', color: 0x2ECC71, hoist: false, permissions: [] },
+  bots: { name: '🤖・Bots', color: 0x95A5A6, hoist: false, permissions: [] }
+};
+
+function baseChannelName(name) {
+  const nome = normalize(name);
+  return nome.includes('・') ? nome.slice(nome.indexOf('・') + 1).trim() : nome.trim();
+}
+
+async function setupEssentialRoles(guild) {
+  const cfg = ensureGuildConfig(guild.id);
+  cfg.setupRoles ??= {};
+  let criados = 0;
+
+  for (const [key, definition] of Object.entries(SETUP_ROLES)) {
+    let role = guild.roles.cache.get(cfg.setupRoles[key]);
+    if (!role || role.managed) role = null;
+    role ||= guild.roles.cache.find((r) => !r.managed && baseChannelName(r.name) === baseChannelName(definition.name));
+    if (!role) {
+      role = await guild.roles.create({ ...definition, mentionable: false, reason: 'Setup completo do servidor' });
+      criados++;
+    }
+    cfg.setupRoles[key] = role.id;
+  }
+
+  cfg.ticketStaffRoles = [...new Set([
+    ...(cfg.ticketStaffRoles || []), cfg.setupRoles.staff, cfg.setupRoles.moderador, cfg.setupRoles.suporte
+  ])];
+  cfg.autoRole ??= cfg.setupRoles.membro;
+  cfg.verifyRole ??= cfg.setupRoles.membro;
+  saveConfig();
+  return { criados, ids: { ...cfg.setupRoles } };
+}
+
+async function ensureSetupChannel(guild, cfg, key, options) {
+  cfg.setupChannels ??= {};
+  let channel = guild.channels.cache.get(cfg.setupChannels[key]);
+  if (channel?.type !== options.type) channel = null;
+  channel ||= guild.channels.cache.find((c) => c.type === options.type && baseChannelName(c.name) === baseChannelName(options.name));
+
+  let criado = false;
+  if (!channel) {
+    channel = await guild.channels.create({ ...options, reason: 'Setup completo do servidor' });
+    criado = true;
+  } else {
+    if (options.parent && channel.parentId !== options.parent) await channel.setParent(options.parent, { lockPermissions: false });
+    if (options.permissionOverwrites) {
+      await channel.permissionOverwrites.set(options.permissionOverwrites, 'Permissões do setup completo');
+    }
+  }
+  cfg.setupChannels[key] = channel.id;
+  return { channel, criado };
+}
+
+async function setupEssentialChannels(guild, client) {
+  const cfg = ensureGuildConfig(guild.id);
+  const botId = client.user.id;
+  const botFullAccess = [
+    PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages,
+    PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.EmbedLinks,
+    PermissionFlagsBits.AttachFiles, PermissionFlagsBits.ManageChannels,
+    PermissionFlagsBits.ManageMessages
+  ];
+  const readOnly = [
+    {
+      id: guild.roles.everyone.id,
+      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory],
+      deny: [PermissionFlagsBits.SendMessages]
+    },
+    { id: botId, allow: botFullAccess }
+  ];
+  const staffOnly = [
+    { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+    { id: botId, allow: botFullAccess },
+    ...[...staffRoleIds(guild, cfg)].map((id) => ({ id, allow: TICKET_BASE_PERMS })),
+    ...(cfg.adminUsers || []).map((id) => ({ id, allow: TICKET_BASE_PERMS }))
+  ];
+
+  let criados = 0;
+  const ensure = async (key, options) => {
+    const result = await ensureSetupChannel(guild, cfg, key, options);
+    if (result.criado) criados++;
+    return result.channel;
+  };
+  const category = (key, name, privateStaff = false) => ensure(key, {
+    name, type: ChannelType.GuildCategory, ...(privateStaff ? { permissionOverwrites: staffOnly } : {})
+  });
+  const text = (key, name, parent, readonly = false, privateStaff = false) => ensure(key, {
+    name, type: ChannelType.GuildText, parent: parent.id,
+    ...(readonly || privateStaff ? { permissionOverwrites: privateStaff ? staffOnly : readOnly } : {})
+  });
+
+  const informacoes = await category('categoriaInformacoes', '📁・informações');
+  const comunidade = await category('categoriaComunidade', '📁・comunidade');
+  const staff = await category('categoriaStaff', '📁・staff', true);
+  const voz = await category('categoriaVoz', '📁・canais de voz');
+
+  const regras = await text('regras', '📖・regras', informacoes, true);
+  await text('anuncios', '📢・anúncios', informacoes, true);
+  const novidades = await text('novidades', '📰・novidades', informacoes, true);
+  const welcome = await text('welcome', '👋・boas-vindas', informacoes, true);
+  await text('chatGeral', '💬・chat-geral', comunidade);
+  const sugestoes = await text('sugestoes', '💡・sugestões', comunidade, true);
+  const niveis = await text('niveis', '⭐・níveis', comunidade, true);
+  const logs = await text('logs', '📋・logs-gerais', staff, false, true);
+  const punicoes = await text('punicoes', '🛡️・logs-punições', staff, false, true);
+  const mensagens = await text('mensagens', '🗑️・logs-mensagens', staff, false, true);
+  await ensure('vozGeral', { name: '🔊・Conversa geral', type: ChannelType.GuildVoice, parent: voz.id });
+  await ensure('vozDois', { name: '🔊・Sala reservada', type: ChannelType.GuildVoice, parent: voz.id });
+
+  cfg.welcomeChannel = welcome.id;
+  cfg.suggestionChannel = sugestoes.id;
+  cfg.logsChannel = logs.id;
+  cfg.punicoesChannel = punicoes.id;
+  cfg.msgDeleteChannel = mensagens.id;
+  cfg.levelChannel = niveis.id;
+  cfg.changelogChannelId = novidades.id;
+  cfg.automod ??= true;
+  cfg.setupCompletedAt = Date.now();
+  saveConfig();
+
+  const hasBotMessage = async (channel, predicate) => {
+    const messages = await channel.messages.fetch({ limit: 20 }).catch(() => null);
+    return !!messages?.some((m) => m.author.id === botId && predicate(m));
+  };
+  if (!await hasBotMessage(regras, (m) => m.embeds.some((e) => e.title?.includes('Regras do Servidor')))) {
+    await regras.send({ embeds: [new EmbedBuilder().setColor(0x3498DB).setTitle('📖 Regras do Servidor').setDescription([
+      '**1.** Respeite todos os membros.',
+      '**2.** Não faça spam, flood ou divulgação sem autorização.',
+      '**3.** Não compartilhe conteúdo ilegal, ofensivo ou inadequado.',
+      '**4.** Use cada canal para o assunto correspondente.',
+      '**5.** Não tente burlar punições ou sistemas do bot.',
+      '**6.** Para suporte ou denúncias, abra um ticket privado.'
+    ].join('\n'))], allowedMentions: MENTIONS_NONE });
+  }
+  if (!await hasBotMessage(sugestoes, (m) => m.components.some((row) => row.components.some((c) => c.customId === 'btn_abrir_sugestao')))) {
+    await sendSuggestionPanel(sugestoes);
+  }
+  if (!await hasBotMessage(welcome, (m) => m.components.some((row) => row.components.some((c) => c.customId === 'verify_btn')))) {
+    await sendVerifyPanel(welcome, guild.roles.cache.get(cfg.verifyRole));
+  }
+  const { CHANGELOG, buildPage } = require('./changelog');
+  if (!await hasBotMessage(novidades, (m) => m.embeds.some((e) => e.title?.includes(`Versão ${CHANGELOG[0].version}`)))) {
+    await novidades.send(buildPage(0));
+  }
+
+  return { criados, canais: { regras, novidades, welcome, sugestoes, logs } };
 }
 
 async function setupTicketSystem(guild, client) {
@@ -742,7 +905,7 @@ async function createTicket(interaction, tipo) {
         { name: '🕒 Aberto', value: `<t:${unix(record.createdAt)}:R>`, inline: true },
         { name: '📌 Situação', value: 'Aguardando atendimento', inline: true }
       )
-      .setFooter({ text: 'Use os botões abaixo para gerenciar ou avaliar o atendimento.' })
+      .setFooter({ text: 'O autor precisa avaliar o atendimento antes do fechamento.' })
       .setTimestamp();
 
     const staffRoles = [...staffRoleIds(guild, cfg)].slice(0, 10);
@@ -776,11 +939,14 @@ async function closeTicket(interaction) {
   if (interaction.user.id !== meta.creatorId && !staff) {
     return interaction.reply(eph('❌ Somente o autor do ticket ou a staff pode fechá-lo.'));
   }
+  const record = getTicketRecord(interaction.guild.id, channel.id);
+  const notaFinal = record?.rating || state.ratings[channel.id] || null;
+  if (!notaFinal) {
+    return interaction.reply(eph('⭐ **A avaliação é obrigatória.** O autor do ticket precisa escolher de 1 a 5 estrelas antes que ele possa ser fechado.'));
+  }
   if (closingTickets.has(channel.id) || meta.status === 'closed') return interaction.reply(eph('⚠️ Este ticket já está sendo fechado.'));
   closingTickets.add(channel.id);
 
-  const record = getTicketRecord(interaction.guild.id, channel.id);
-  const notaFinal = record?.rating || state.ratings[channel.id] || null;
   await interaction.reply({ content: '🔒 Ticket fechado. Gerando o transcript e removendo o canal em alguns segundos...' });
   await interaction.message.edit({ components: [] }).catch(() => {});
 
@@ -1179,13 +1345,23 @@ const COMMANDS = {
   },
 
   async setup(ctx) {
-    const { interaction, guild } = ctx;
+    const { interaction, guild, member } = ctx;
     if (await deny(ctx)) return;
+    if (!hasFullAccess(member, getGuildConfig(guild.id))
+      && (!member.permissions.has(PermissionFlagsBits.ManageChannels) || !member.permissions.has(PermissionFlagsBits.ManageRoles))) {
+      return interaction.reply(eph('❌ O setup completo também exige as permissões **Gerenciar Canais** e **Gerenciar Cargos**.'));
+    }
     const acao = interaction.options.getString('acao') || 'completo';
     await interaction.deferReply({ flags: EPHEMERAL });
 
     try {
       const resposta = [];
+      if (acao === 'completo') {
+        const cargos = await setupEssentialRoles(guild);
+        resposta.push(`👥 Cargos essenciais configurados: **${cargos.criados} criado(s)** e os demais reutilizados.`);
+        const estrutura = await setupEssentialChannels(guild, interaction.client);
+        resposta.push(`🏗️ Estrutura do servidor: **${estrutura.criados} canal(is) criado(s)**, logs e comandos de configuração conectados.`);
+      }
       if (acao === 'completo' || acao === 'tickets') {
         resposta.push(await setupTicketSystem(guild, interaction.client));
       }
@@ -1193,11 +1369,11 @@ const COMMANDS = {
         const r = await decorateGuildChannels(guild);
         resposta.push(`✨ Emojis: **${r.alterados}** canal(is) atualizado(s)${r.falhas ? ` • **${r.falhas}** falha(s)` : ''}.`);
       }
-      resposta.push('', `Use \`${PREFIX}ticket\` para publicar outro painel quando precisar.`);
+      resposta.push('', `Painéis extras: \`${PREFIX}ticket\` e \`${PREFIX}painel-sugestao\`. Veja tudo com \`${PREFIX}help\`.`);
       await interaction.editReply({ content: truncate(resposta.join('\n'), 1990) });
     } catch (err) {
       console.error('[setup]', err);
-      await interaction.editReply({ content: describeError(err) || '❌ Não consegui concluir o setup. Verifique minhas permissões de **Gerenciar Canais** e tente novamente.' });
+      await interaction.editReply({ content: describeError(err) || '❌ Não consegui concluir o setup. Verifique minhas permissões de **Gerenciar Canais** e **Gerenciar Cargos** e tente novamente.' });
     }
   },
 

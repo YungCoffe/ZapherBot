@@ -23,8 +23,9 @@ O Render já cria sozinho: PORT e RENDER_EXTERNAL_URL (usada pelo anti-sono).
 
 Developer Portal (aba Bot): ligue "Message Content Intent" e "Server Members Intent".
 Primeiro uso depois de subir os arquivos:
-  ?setup                cria a estrutura de tickets e coloca emojis nos canais
+  ?setup                configura o servidor completo: cargos, canais, logs, regras,
+                        verificação, sugestões, níveis, voz, tickets e emojis
   ?setup tickets        cria somente a estrutura de tickets
-  ?setup emojis         coloca emojis nos canais sem refazer o painel
+  ?setup emojis         coloca emojis nos canais sem refazer a estrutura
   ?backup               cria o canal privado de backup e envia a primeira cópia
                         (também aceita: ?backup configurar)

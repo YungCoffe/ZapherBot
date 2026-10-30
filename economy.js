@@ -140,7 +140,6 @@ const valorOpt = (desc = 'Valor') => (o) => o.setName('valor').setDescription(de
 
 const economySlashCommands = [
   new SlashCommandBuilder().setName('saldo').setDescription('Consulta o teu património e extrato').addUserOption(o => o.setName('usuario').setDescription('Membro').setRequired(false)),
-  new SlashCommandBuilder().setName('patrimonio').setDescription('Consulta o teu património e saldo total'),
   new SlashCommandBuilder().setName('depositar').setDescription('Guarda dinheiro no banco').addIntegerOption(valorOpt('Quantia')),
   new SlashCommandBuilder().setName('sacar').setDescription('Saca dinheiro do banco').addIntegerOption(valorOpt('Quantia')),
   new SlashCommandBuilder().setName('transferir').setDescription('Faz Pix/Transferência para outro membro').addUserOption(o => o.setName('usuario').setDescription('Destinatário').setRequired(true)).addIntegerOption(valorOpt()),
@@ -163,9 +162,7 @@ const economySlashCommands = [
   new SlashCommandBuilder().setName('slots').setDescription('Joga na máquina caça-níqueis').addIntegerOption(valorOpt()),
   new SlashCommandBuilder().setName('roleta').setDescription('Aposta na roleta da sorte').addStringOption(o => o.setName('cor').setDescription('vermelho, preto ou verde').setRequired(true).addChoices({ name: 'Vermelho', value: 'vermelho' }, { name: 'Preto', value: 'preto' }, { name: 'Verde', value: 'verde' })).addIntegerOption(valorOpt()),
 
-  new SlashCommandBuilder().setName('loja').setDescription('Mostra a lojinha do servidor'),
-  new SlashCommandBuilder().setName('mercado').setDescription('Envia o painel interativo fixo da lojinha e mercado no canal'),
-  new SlashCommandBuilder().setName('painel-economia').setDescription('Envia o painel interativo fixo da lojinha e mercado no canal'),
+  new SlashCommandBuilder().setName('loja').setDescription('Mostra o painel interativo da lojinha e do mercado'),
   new SlashCommandBuilder().setName('inventario').setDescription('Mostra os itens que tens guardados'),
 
   new SlashCommandBuilder().setName('investir').setDescription('Aplica dinheiro em fundos de investimento variados').addStringOption(o => o.setName('opcao').setDescription('Tipo de investimento').setRequired(true).addChoices(
@@ -1111,13 +1108,11 @@ Object.assign(COMMANDS, {
   }
 });
 
-COMMANDS['painel-economia'] = COMMANDS.mercado;
 COMMANDS.loja = COMMANDS.mercado;
-COMMANDS.patrimonio = COMMANDS.saldo;
 for (const name of Object.keys(ACTIVITIES)) COMMANDS[name] = activityCommand(name);
 
 // Comandos que não precisam de conta (não cria registro à toa)
-const NO_ACCOUNT = new Set(['mercado', 'painel-economia', 'loja', 'addmoney', 'removemoney', 'saldo', 'patrimonio', 'rank']);
+const NO_ACCOUNT = new Set(['loja', 'addmoney', 'removemoney', 'saldo', 'rank']);
 
 const handledCommands = Object.keys(COMMANDS);
 

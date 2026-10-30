@@ -1,9 +1,11 @@
 'use strict';
 
 /**
- * /novidades — mostra o histórico de atualizações do bot (da mais nova para a mais antiga).
- * Para registrar uma atualização nova: adicione um item NO INÍCIO da lista CHANGELOG
- * e aumente a "version" no package.json.
+ * FONTE ÚNICA DAS ATUALIZAÇÕES — /novidades e /help usam esta mesma lista.
+ *
+ * ATENÇÃO, DESENVOLVEDOR OU IA: ao mudar comandos, permissões ou qualquer recurso do bot,
+ * adicione uma versão NO INÍCIO de CHANGELOG, descreva as mudanças e aumente "version"
+ * no package.json. Não crie uma segunda lista de novidades: este arquivo alimenta os dois comandos.
  */
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder } = require('discord.js');
@@ -11,9 +13,26 @@ const { eph, respond, describeError } = require('./utils');
 
 const CHANGELOG = [
   {
+    version: '2.6.0', data: '30/10/2026', titulo: 'Servidor completo, avaliação obrigatória e ajuda integrada',
+    itens: [
+      '🏗️ **`?setup` completo**: cria ou reutiliza cargos, categorias, canais, logs, regras, verificação, sugestões, níveis, voz e toda a estrutura de tickets.',
+      '⭐ **Avaliação obrigatória**: nenhum ticket pode ser fechado antes de o autor escolher de 1 a 5 estrelas.',
+      '📰 **Novidades dentro da ajuda**: `/help` mostra a versão atual e tem um botão direto para o histórico. O canal de novidades criado pelo setup recebe a versão mais recente.',
+      '🧹 **Comandos revisados**: `patrimonio` virou atalho de `saldo`; `mercado` e `painel-economia` viraram atalhos de `loja`, removendo slash commands repetidos.'
+    ]
+  },
+  {
+    version: '2.5.0', data: '30/10/2026', titulo: 'Tickets refeitos e backup privado',
+    itens: [
+      '🎫 Novo sistema de tickets persistente, com painel, categoria, prevenção de duplicidade, atendente, avaliação e transcript.',
+      '✨ `?setup` passou a configurar tickets e padronizar emojis nos canais.',
+      '💾 `?backup` cria o canal privado e envia a primeira cópia; permissões antigas são removidas ao reutilizar um canal.'
+    ]
+  },
+  {
     version: '2.4.0', data: '27/10/2026', titulo: 'Dados seguros, empresas e mais controle',
     itens: [
-      '💾 **Backup automático no Discord**: saldo, níveis, empresas, cargos e configurações não somem mais quando o bot atualiza ou reinicia (o dono ativa uma vez com `?backup configurar`).',
+      '💾 **Backup automático no Discord**: saldo, níveis, empresas, cargos e configurações não somem mais quando o bot atualiza ou reinicia (o dono ativa uma vez com `?backup`).',
       '🏢 **/empresa**: crie uma empresa, contrate pessoas (elas aceitam o convite), os funcionários trabalham e ganham uma parte, e o resto vai para o seu cofre.',
       '🤖 **IA agora usa o Gemini** (`gemini-3.1-flash-lite`): gasta bem menos (respostas curtas e cache de perguntas repetidas), os erros dizem o motivo e `?ia` mostra se está ligada ou desligada.',
       '🔔 **Logs**: `?logs` mostra para onde cada log vai, testa os canais, e agora registra bans e silenciamentos feitos direto no Discord.',
