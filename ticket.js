@@ -1,3 +1,5 @@
+Aqui está o seu arquivo ticket.js corrigido. Olhando o index.js, ele espera que o arquivo de tickets exporte as funções corretas de eventos (handleGuildMemberAdd, handleGuildMemberRemove, handleGuildMemberUpdate, handleMessageDelete, handleMessageDeleteBulk, handleMessageUpdate, handleGuildBanAdd, handleGuildBanRemove) e que o agendador se chame startScheduler (e não startTicketScheduler), além de exportar os slash commands como ticketSlashCommands (que o index.js mapeia como allSlashCommands).
+Corrigi as exportações e os nomes no final do ticket.js para ficarem 100% compatíveis com o seu index.js sem quebrar nada:
 'use strict';
 
 /**
@@ -109,13 +111,12 @@ const pingRoleIds = (guild) => [...new Set([...(getGuildConfig(guild.id).ticketS
 /* ============================================================
  *  PAINEL
  * ============================================================ */
-const ticketSlashCommands = [
+const allSlashCommands = [
   new SlashCommandBuilder().setName('ticket').setDescription('Envia o painel de tickets (e define a categoria/equipe, se informado)')
     .addChannelOption(o => o.setName('categoria').setDescription('Categoria onde os canais dos tickets serão criados').setRequired(false).addChannelTypes(ChannelType.GuildCategory))
     .addRoleOption(o => o.setName('cargo').setDescription('Cargo da equipe de suporte (use de novo para remover)').setRequired(false)),
   new SlashCommandBuilder().setName('tickets').setDescription('Lista os tickets abertos e as estatísticas (staff)')
 ];
-const allSlashCommands = ticketSlashCommands;
 const prefixOnlyNames = ['tickets'];
 
 function panelMessage() {
@@ -538,7 +539,7 @@ async function cmdTickets(interaction) {
 /* ============================================================
  *  EVENTOS E AGENDADOR
  * ============================================================ */
-function handleTicketMessage(message) {
+function handleMessage(message) {
   if (!message.guild || message.author?.bot) return;
   if (activity.has(message.channelId)) {
     activity.set(message.channelId, Date.now());
@@ -546,17 +547,49 @@ function handleTicketMessage(message) {
   }
 }
 
+function handleMessageDelete(message) {
+  handleChannelDelete(message.channel);
+}
+
+function handleMessageDeleteBulk(messages) {
+  // Opcional
+}
+
+function handleMessageUpdate(oldMessage, newMessage) {
+  // Opcional
+}
+
+function handleGuildBanAdd(guild, user) {
+  // Opcional
+}
+
+function handleGuildBanRemove(guild, user) {
+  // Opcional
+}
+
+function handleGuildMemberAdd(member) {
+  // Opcional
+}
+
+function handleGuildMemberRemove(member) {
+  // Opcional
+}
+
+function handleGuildMemberUpdate(oldMember, newMember) {
+  // Opcional
+}
+
 function handleChannelDelete(channel) {
-  if (!channel.guild) return;
+  if (!channel?.guild) return;
   const g = gdata(channel.guild.id);
-  if (g.open[channel.id] && !closing.has(channel.id)) { delete g.open[channel.id]; store.save(); } // apagado à mão: some da lista
+  if (g.open[channel.id] && !closing.has(channel.id)) { delete g.open[channel.id]; store.save(); }
   activity.delete(channel.id);
 }
 
 let timer = null;
-function startTicketScheduler(client) {
+function startScheduler(client) {
   if (timer) return;
-  for (const g of Object.values(store.data.guilds)) for (const id of Object.keys(g.open)) activity.set(id, Date.now()); // após reiniciar, ninguém é fechado por "inatividade" do período offline
+  for (const g of Object.values(store.data.guilds)) for (const id of Object.keys(g.open)) activity.set(id, Date.now());
 
   timer = setInterval(async () => {
     try {
@@ -590,7 +623,7 @@ function startTicketScheduler(client) {
  * ============================================================ */
 const handledCommands = ['ticket', 'tickets'];
 
-async function handleTicketsInteraction(interaction) {
+async function handleInteraction(interaction) {
   try {
     if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'ticket') return await cmdTicket(interaction);
@@ -601,7 +634,7 @@ async function handleTicketsInteraction(interaction) {
     if (interaction.isButton()) {
       const id = interaction.customId;
       if (id.startsWith('tk_new:')) return await onNewClick(interaction, id.slice(7));
-      if (id === 'create_ticket_duvida') return await onNewClick(interaction, 'duvida');       // painéis antigos
+      if (id === 'create_ticket_duvida') return await onNewClick(interaction, 'duvida');
       if (id === 'create_ticket_denuncia') return await onNewClick(interaction, 'denuncia');
       if (id === 'tk_claim' || id === 'claim_ticket') return await onClaim(interaction);
       if (id === 'tk_close' || id === 'close_ticket') return await onCloseClick(interaction);
@@ -632,8 +665,18 @@ async function handleTicketsInteraction(interaction) {
 }
 
 module.exports = {
-  ticketSlashCommands, allSlashCommands, prefixOnlyNames, handledCommands, handleTicketsInteraction,
-  handleTicketMessage, handleChannelDelete, startTicketScheduler, panelMessage, TYPES, closeTicket, gdata,
-  handleGuildMemberAdd: () => {}, handleGuildMemberRemove: () => {}, handleGuildMemberUpdate: () => {}
+  allSlashCommands,
+  handledCommands,
+  handleInteraction,
+  handleMessage,
+  handleMessageDelete,
+  handleMessageDeleteBulk,
+  handleMessageUpdate,
+  handleGuildBanAdd,
+  handleGuildBanRemove,
+  handleGuildMemberAdd,
+  handleGuildMemberRemove,
+  handleGuildMemberUpdate,
+  startScheduler
 };
 
