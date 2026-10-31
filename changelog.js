@@ -19,6 +19,8 @@ const CHANGELOG = [
       '🔒 **Verificação obrigatória**: quem entra sem o cargo Membro só vê **verificação** e **regras**. O resto do servidor aparece depois de clicar em Verificar-me.',
       '🧩 **Painéis configurados sozinhos**: verificação, regras, tickets, sugestões, cargos de interesse, **cargo personalizado**, **loja/mercado**, Central de Ajuda, novidades e guia do servidor.',
       '💾 **Backup**: ao terminar o setup, o bot manda uma cópia da configuração nova para o canal de backup.',
+      '🔐 **Trava**: durante o setup o servidor fica trancado (ninguém escreve) e é destrancado no fim. Canais de painel, regras, guia, loja e logs ficam trancados para todos, até para a equipe (só o bot escreve). Os demais canais de texto ficam trancados para quem não é Membro.',
+      '📖 **Ajuda atualizada**: nova página **Painéis & Setup** no `/help` e o painel de ajuda fixo no canal de comandos. O setup também atualiza as mensagens das novidades, do guia e dos painéis.',
       '🛡️ **Segurança**: só o dono ou um Administrador usa, pede confirmação por botão (60 segundos) e protege o canal de backup e os cargos comprados na loja. Quem tinha cargo equivalente (dono, sub dono, coordenador, hmod, moderador, suporte) recebe o novo automaticamente.',
       '🔄 **`?setup atualizar`**: o setup antigo, que não apaga nada e só completa o que falta.',
       '🎫 **Tickets**: ao abrir, só o cargo **Suporte** é marcado. Os demais cargos da equipe continuam vendo e atendendo o ticket.',

@@ -56,6 +56,25 @@ function setHelpSources(builders, prefixOnlyNames = []) {
   }
   const sobrando = [...defs.keys()].filter((n) => !usados.has(n));
   if (sobrando.length) pages.push({ emoji: '📦', nome: 'Outros', nomes: sobrando });
+  pages.push({ emoji: '🧩', nome: 'Painéis & Setup', nomes: [], texto: setupInfoText() }); // página de guia, sem lista de comandos
+}
+
+/** Página fixa da ajuda: explica o setup, a verificação e os painéis que ele configura. */
+function setupInfoText() {
+  return [
+    '**🔒 Verificação obrigatória**',
+    'Quem entra sem o cargo **Membro** só vê **✅・verificação** e **📖・regras**. Depois de clicar em **Verificar-me**, o resto do servidor aparece.',
+    '',
+    '**🧩 Painéis fixos (o setup posta todos)**',
+    '✅ Verificação • 📖 Regras • 🎫 Tickets • 💡 Sugestões • 🏷️ Cargos de interesse • 🎨 Cargo personalizado • 🛒 Loja e mercado • 📖 Central de Ajuda • 📰 Novidades • 🧭 Guia do servidor',
+    '',
+    `**🏗️ \`${PREFIX}setup\`** *(dono do servidor ou Administrador)*`,
+    `• \`${PREFIX}setup\` — apaga canais e cargos e recria tudo do zero (pede confirmação)`,
+    `• \`${PREFIX}setup atualizar\` — só completa o que faltar, sem apagar nada`,
+    `• \`${PREFIX}setup tickets\` e \`${PREFIX}setup emojis\` — etapas isoladas`,
+    '',
+    '**🔐 Durante o setup** o servidor fica **trancado** (ninguém escreve) e é destrancado no fim. Canais de painel, regras, guia, loja e logs ficam **trancados para todos** (só o bot escreve; a equipe só lê). Os demais canais de texto ficam trancados para quem não é Membro. Ao terminar, o bot envia um **backup**.'
+  ].join('\n');
 }
 
 const line = (name) => {
@@ -86,9 +105,10 @@ function buildPage(index) {
       .setDescription([
         `Olá! Existem **${defs.size} comandos**. Escolha uma categoria no menu abaixo ou use os botões.`,
         '',
-        pages.map((p) => `${p.emoji} **${p.nome}** — ${p.nomes.length}`).join('\n'),
+        pages.map((p) => `${p.emoji} **${p.nome}** — ${p.texto ? 'guia' : p.nomes.length}`).join('\n'),
         '',
         `💡 Os comandos funcionam com \`/\` e/ou prefixo \`${PREFIX}\`. \`backup\`, \`logs\` e \`setup\` usam somente o prefixo.`,
+        `🏗️ \`${PREFIX}setup\` configura o servidor inteiro (cargos, canais, permissões, verificação e todos os painéis). Veja a página **Painéis & Setup**.`,
         `💰 A moeda do servidor é a **${CURRENCY_NAME}** (🪙). Em comandos de dinheiro com prefixo você pode usar \`5k\`, \`1.5m\`, \`tudo\` e \`metade\`.`,
         '🤖 Marque o bot ou use `/perguntar` para conversar com a IA.',
         `📰 **Versão ${CHANGELOG[0].version}:** ${CHANGELOG[0].titulo}. Use \`/novidades\` ou o botão abaixo.`,
@@ -101,7 +121,8 @@ function buildPage(index) {
   const page = pages[Math.min(index, pages.length) - 1];
   embed.setTitle(`${page.emoji} ${page.nome} (${Math.min(index, pages.length) + 1}/${total})`)
     .setFooter({ text: `Página ${Math.min(index, pages.length) + 1} de ${total} • /help comando:<nome> para detalhes` });
-  chunkLines(page.nomes.map(line)).forEach((chunk, i) => embed.addFields({ name: i === 0 ? `Comandos (${page.nomes.length})` : '\u200b', value: chunk }));
+  if (page.texto) embed.setDescription(page.texto);
+  else chunkLines(page.nomes.map(line)).forEach((chunk, i) => embed.addFields({ name: i === 0 ? `Comandos (${page.nomes.length})` : '\u200b', value: chunk }));
   return embed;
 }
 
@@ -112,7 +133,7 @@ function buildComponents(index) {
   const menu = new StringSelectMenuBuilder().setCustomId('help_select').setPlaceholder('📂 Escolha uma categoria')
     .addOptions([
       { label: 'Visão geral', value: '0', emoji: '📖', default: atual === 0 },
-      ...pages.map((p, i) => ({ label: truncate(p.nome, 100), value: String(i + 1), emoji: p.emoji, description: `${p.nomes.length} comandos`, default: atual === i + 1 }))
+      ...pages.map((p, i) => ({ label: truncate(p.nome, 100), value: String(i + 1), emoji: p.emoji, description: p.texto ? 'Guia do setup e dos painéis' : `${p.nomes.length} comandos`, default: atual === i + 1 }))
     ]);
   const botoes = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`help_page_${Math.max(0, atual - 1)}`).setLabel('Anterior').setEmoji('◀️').setStyle(ButtonStyle.Primary).setDisabled(atual === 0),

@@ -151,4 +151,7 @@ Em cada linha: `<obrigatório>` `[opcional]`. A permissão entre parênteses é 
 - `?setup atualizar`: não apaga nada, só completa o que faltar.
 - `?setup tickets` e `?setup emojis`: etapas isoladas.
 - Quem entra **sem o cargo Membro** vê só ✅・verificação e 📖・regras. O restante aparece depois de clicar em **Verificar-me**.
+- **Trava:** durante o setup o servidor fica trancado (ninguém escreve em nenhum canal) e é destrancado no fim, mesmo se o setup falhar. Depois disso, **painéis, regras, guia, loja, novidades, níveis, sugestões e logs ficam trancados para todos**, até para a equipe (só o bot escreve; só quem tem Administrador consegue). Nos anúncios, eventos, sorteios, parcerias e enquetes só a equipe escreve. Os demais canais de texto são trancados para quem não é Membro.
 - Cargos pagos na loja (personalizados e VIP) e o canal de backup nunca são apagados. Ao final, o bot envia um backup.
+- O setup também **atualiza** as mensagens fixas que já existirem (novidades, guia, ajuda, loja, cargo personalizado, verificação e cargos de interesse).
+- No `/help` há uma página nova, **🧩 Painéis & Setup**, e o painel de ajuda fica fixo em 🤖・comandos-bot.
