@@ -292,4 +292,4 @@ async function handleRolesInteraction(interaction) {
   }
 }
 
-module.exports = { rolesSlashCommands, handledCommands, handleRolesInteraction, ROLE_PRICE };
+module.exports = { rolesSlashCommands, handledCommands, handleRolesInteraction, ROLE_PRICE, panelMessage };

@@ -343,6 +343,28 @@ async function handleBackupInteraction(interaction) {
   }
 }
 
+/**
+ * Usado pelo /setup: garante o canal de backup e envia uma cópia agora, já com a configuração nova.
+ * Só cria o canal se quem pediu o setup é o dono do bot (o backup guarda dados de todo mundo).
+ */
+async function backupAfterSetup(guild, client, user) {
+  let canal = await findChannel(client);
+  let criado = false;
+  if (!canal && require('./perms').isOwner(user.id)) {
+    canal = await guild.channels.create({
+      name: CHANNEL_NAME,
+      type: ChannelType.GuildText,
+      topic: `${MARKER} — cópias de segurança do bot. NÃO apague este canal. Mantenha-o privado.`,
+      permissionOverwrites: backupOverwrites(guild, user.id, client.user.id),
+      reason: 'Setup: canal de backup do bot'
+    }).catch(() => null);
+    if (canal) { channelCache = canal; criado = true; }
+  }
+  if (!canal) return { ok: false, reason: 'ainda não existe canal de backup (o dono do bot precisa rodar `?backup` uma vez)' };
+  const r = await pushBackup(client, { force: true });
+  return { ...r, canal, criado };
+}
+
 /** É o canal privado de backup do bot? (o setup completo nunca o apaga) */
 function isBackupChannel(channel) {
   return !!channel?.isTextBased?.() && !channel.isThread?.()
@@ -350,6 +372,6 @@ function isBackupChannel(channel) {
 }
 
 module.exports = {
-  isBackupChannel, backupSlashCommands, prefixOnlyNames, handledCommands, handleBackupInteraction,
+  backupAfterSetup, isBackupChannel, backupSlashCommands, prefixOnlyNames, handledCommands, handleBackupInteraction,
   autoRestoreOnStart, startBackupScheduler, pushBackup
 };

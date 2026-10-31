@@ -318,11 +318,11 @@ async function sendSuggestionPanel(channel) {
   await channel.send({ embeds: [embed], components: [row] });
 }
 
-async function sendVerifyPanel(channel, role) {
+async function sendVerifyPanel(channel, role, regras = null) {
   const embed = new EmbedBuilder()
     .setColor(0x2ECC71)
     .setTitle('✅ Verificação')
-    .setDescription(`Clique no botão abaixo para te verificares e receberes o cargo <@&${role.id}>.`);
+    .setDescription(`Clique no botão abaixo para te verificares e receberes o cargo <@&${role.id}>.${regras ? `\n📖 Antes, leia as regras em <#${regras.id}>. Depois de verificar, o resto do servidor aparece para você.` : ''}`);
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('verify_btn').setLabel('✅ Verificar-me').setStyle(ButtonStyle.Success)
   );
@@ -570,8 +570,8 @@ const SETUP_ROLES = {
   },
   hmod: {
     name: '⚜️・HMod', color: 0xC0392B, hoist: true,
-    permissions: permFlags('ManageMessages', 'ManageNicknames', 'KickMembers', 'BanMembers', 'ModerateMembers', 'ViewAuditLog',
-      'MuteMembers', 'MoveMembers', 'DeafenMembers')
+    permissions: permFlags('ManageMessages', 'ManageChannels', 'ManageNicknames', 'KickMembers', 'BanMembers', 'ModerateMembers',
+      'ViewAuditLog', 'MuteMembers', 'MoveMembers', 'DeafenMembers')
   },
   moderador: {
     name: '🔨・Moderador', color: 0xE67E22, hoist: true,
@@ -585,6 +585,10 @@ const SETUP_ROLES = {
     name: '🎫・Suporte', color: 0x3498DB, hoist: true,
     permissions: permFlags('ManageMessages', 'ModerateMembers')
   },
+  // Cargos VIP vendidos na /loja (o bot procura pelo nome exato, por isso ficam sem emoji)
+  vipouro: { name: 'VIP Ouro', color: 0xFFD700, hoist: false, vip: true, permissions: [] },
+  vipprata: { name: 'VIP Prata', color: 0xC0C0C0, hoist: false, vip: true, permissions: [] },
+  vipbronze: { name: 'VIP Bronze', color: 0xCD7F32, hoist: false, vip: true, permissions: [] },
   niveis: { niveis: true, permissions: [] },
   ...Object.fromEntries(Object.entries(SELF_ROLES).map(([key, r]) => [key, {
     name: `${r.emoji}・${r.label}`, color: 0, hoist: false, self: true, permissions: []
@@ -633,8 +637,9 @@ async function applyEveryoneBaseline(guild) {
  * avoid: cargos que NUNCA devem ser reaproveitados (ex.: cargos pagos na loja, para ninguém virar "Suporte" pelo nome).
  * baseline: também limpa as permissões do @everyone (usado só no setup que recria tudo).
  */
-async function setupEssentialRoles(guild, { avoid = new Set(), baseline = false } = {}) {
+async function setupEssentialRoles(guild, { avoid = new Set(), baseline = false, gate } = {}) {
   const cfg = ensureGuildConfig(guild.id);
+  gate ??= !!cfg.gateEnabled;
   cfg.setupRoles ??= {};
   const me = guild.members.me;
   const reduzidos = [];
@@ -652,8 +657,9 @@ async function setupEssentialRoles(guild, { avoid = new Set(), baseline = false 
     }
 
     let role = guild.roles.cache.get(cfg.setupRoles[key]);
-    if (!role || role.managed || avoid.has(role.id)) role = null;
-    role ||= guild.roles.cache.find((r) => !r.managed && r.id !== guild.id && !avoid.has(r.id)
+    const evitar = (id) => avoid.has(id) && !definition.vip; // VIP comprado na loja é o próprio cargo VIP, então é reaproveitado
+    if (!role || role.managed || evitar(role.id)) role = null;
+    role ||= guild.roles.cache.find((r) => !r.managed && r.id !== guild.id && !evitar(r.id)
       && baseChannelName(r.name) === baseChannelName(definition.name)
       && (!definition.self || r.permissions.bitfield === 0n)); // cargo de interesse nunca reaproveita cargo com permissões
     if (!role) {
@@ -673,7 +679,8 @@ async function setupEssentialRoles(guild, { avoid = new Set(), baseline = false 
     ...(cfg.ticketStaffRoles || []),
     ...STAFF_KEYS.map((k) => cfg.setupRoles[k]).filter(Boolean)
   ])];
-  cfg.autoRole ??= cfg.setupRoles.membro;
+  // Com a verificação ligada só o botão de verificar entrega o Membro; sem ela, entra direto como antes
+  if (!gate) cfg.autoRole ??= cfg.setupRoles.membro;
   cfg.verifyRole ??= cfg.setupRoles.membro;
   saveConfig();
 
@@ -708,9 +715,15 @@ async function ensureSetupChannel(guild, cfg, key, options) {
  * ============================================================ */
 const SERVER_LAYOUT = [
   {
+    // Único lugar que quem ainda não se verificou enxerga (pub = visível para todos)
+    key: 'categoriaInicio', name: '📁・início', mode: 'readonly', pub: true, channels: [
+      { key: 'verificacao', name: '✅・verificação', hideFromMembers: true, topic: 'Clique em Verificar-me para liberar o resto do servidor.' },
+      { key: 'regras', name: '📖・regras', topic: 'Leia antes de participar. Quebrar as regras gera punição.' }
+    ]
+  },
+  {
     key: 'categoriaInformacoes', name: '📁・informações', mode: 'readonly', channels: [
-      { key: 'welcome', name: '👋・boas-vindas', topic: 'Clique em Verificar-me para receber o cargo de membro.' },
-      { key: 'regras', name: '📖・regras', topic: 'Leia antes de participar. Quebrar as regras gera punição.' },
+      { key: 'welcome', name: '👋・boas-vindas', topic: 'Entradas e saídas de membros.' },
       { key: 'anuncios', name: '📢・anúncios', topic: 'Avisos importantes da equipe.' },
       { key: 'novidades', name: '📰・novidades', topic: 'Novidades e atualizações do bot.' },
       { key: 'guia', name: '🧭・guia-do-servidor', topic: 'O mapa de todos os canais e para que serve cada um.' },
@@ -724,7 +737,7 @@ const SERVER_LAYOUT = [
       { key: 'chatGeral', name: '💬・chat-geral', topic: 'Conversa livre. Mantenha o respeito.' },
       { key: 'midia', name: '📸・mídia', topic: 'Fotos, vídeos e prints.' },
       { key: 'memes', name: '😂・memes', topic: 'Memes e humor, sem ofender ninguém.' },
-      { key: 'comandosBot', name: '🤖・comandos-bot', topic: 'Use os comandos do bot aqui para não poluir os outros chats.' },
+      { key: 'comandosBot', name: '🤖・comandos-bot', topic: 'Use os comandos do bot aqui e consulte a Central de Ajuda fixa.' },
       { key: 'sugestoes', name: '💡・sugestões', mode: 'readonly', topic: 'Envie ideias pelo botão do painel.' },
       { key: 'enquetes', name: '📊・enquetes', mode: 'readonly', topic: 'Votações da comunidade.' },
       { key: 'niveis', name: '⭐・níveis', mode: 'readonly', topic: 'Avisos de subida de nível.' },
@@ -750,7 +763,8 @@ const SERVER_LAYOUT = [
       { key: 'economia', name: '💰・economia', topic: 'Comandos de economia: /saldo, /trabalhar, /rank...' },
       { key: 'empresas', name: '🏢・empresas', topic: 'Crie e administre sua empresa com /empresa.' },
       { key: 'cassino', name: '🎰・cassino', topic: 'Apostas: /coinflip, /blackjack e /slots.' },
-      { key: 'loja', name: '🛒・loja', topic: 'Compre itens, VIP e cargo personalizado com /loja.' }
+      { key: 'loja', name: '🛒・loja', mode: 'readonly', topic: 'Painel da loja e do mercado: use os botões. Os comandos ficam em 💰・economia.' },
+      { key: 'cargoPersonalizado', name: '🎨・cargo-personalizado', mode: 'readonly', topic: 'Compre o seu próprio cargo, com o nome e a cor que quiser, pelo botão do painel.' }
     ]
   },
   {
@@ -803,8 +817,9 @@ function buildSelfRolesPanel(guild, cfg) {
   return { embeds: [embed], components: rows, allowedMentions: MENTIONS_NONE };
 }
 
-async function setupEssentialChannels(guild, client) {
+async function setupEssentialChannels(guild, client, { gate } = {}) {
   const cfg = ensureGuildConfig(guild.id);
+  gate ??= !!cfg.gateEnabled; // gate = só quem tem o cargo Membro (verificado) enxerga o servidor
   const P = PermissionFlagsBits;
   const botId = client.user.id;
   const everyone = guild.roles.everyone.id;
@@ -831,6 +846,26 @@ async function setupEssentialChannels(guild, client) {
     ...(cfg.adminUsers || []).map((id) => ({ id, allow: [P.ViewChannel] }))
   ];
 
+  // Quem enxerga os canais "só para verificados": Membro, Bots e a equipe
+  const membroId = cfg.setupRoles?.membro;
+  const viewers = [...new Set([membroId, cfg.setupRoles?.bots, ...staffIds].filter(Boolean))];
+  const botOw = { id: botId, allow: botFullAccess };
+  const staffPost = staffIds.map((id) => ({ id, allow: [P.ViewChannel, P.ReadMessageHistory, P.SendMessages, P.EmbedLinks, P.AttachFiles] }));
+  const overwritesFor = (mode, { voice = false, pub = false, hide = false } = {}) => {
+    if (mode === 'staff') return voice ? staffVoice : staffOnly;
+    if (pub) { // todos veem, ninguém escreve (a verificação some para quem já é Membro)
+      const lista = [{ id: everyone, allow: [P.ViewChannel, P.ReadMessageHistory], deny: [P.SendMessages] }, botOw, ...staffPost];
+      if (gate && hide && membroId) lista.push({ id: membroId, deny: [P.ViewChannel] });
+      return lista;
+    }
+    if (!gate) return mode === 'readonly' ? readOnly : null; // sem verificação: todos veem, como antes
+    if (mode === 'readonly') {
+      return [{ id: everyone, deny: [P.ViewChannel, P.SendMessages] }, botOw,
+        ...viewers.map((id) => ({ id, allow: [P.ViewChannel, P.ReadMessageHistory] })), ...staffPost];
+    }
+    return [{ id: everyone, deny: [P.ViewChannel] }, botOw, ...viewers.map((id) => ({ id, allow: [P.ViewChannel] }))];
+  };
+
   let criados = 0;
   const made = {};
   const ensure = async (key, options) => {
@@ -842,12 +877,15 @@ async function setupEssentialChannels(guild, client) {
   for (const cat of SERVER_LAYOUT) {
     const parent = await ensure(cat.key, {
       name: cat.name, type: ChannelType.GuildCategory,
-      ...(cat.mode === 'staff' ? { permissionOverwrites: staffOnly } : {})
+      ...(() => {
+        const ow = cat.mode === 'staff' ? staffOnly : (gate && !cat.pub ? overwritesFor('open') : null);
+        return ow ? { permissionOverwrites: ow } : {};
+      })()
     });
     made[cat.key] = parent;
     for (const def of cat.channels) {
       const mode = def.mode || cat.mode || 'open';
-      const overwrites = mode === 'readonly' ? readOnly : mode === 'staff' ? (def.voice ? staffVoice : staffOnly) : null;
+      const overwrites = overwritesFor(mode, { voice: !!def.voice, pub: !!(cat.pub || def.pub), hide: !!def.hideFromMembers });
       made[def.key] = await ensure(def.key, {
         name: def.name,
         type: def.voice ? ChannelType.GuildVoice : ChannelType.GuildText,
@@ -892,8 +930,9 @@ async function setupEssentialChannels(guild, client) {
   if (!await hasBotMessage(made.sugestoes, (m) => m.components.some((row) => row.components.some((c) => c.customId === 'btn_abrir_sugestao')))) {
     await sendSuggestionPanel(made.sugestoes);
   }
-  if (!await hasBotMessage(made.welcome, (m) => m.components.some((row) => row.components.some((c) => c.customId === 'verify_btn')))) {
-    await sendVerifyPanel(made.welcome, guild.roles.cache.get(cfg.verifyRole));
+  const hasButton = (m, id) => m.components.some((row) => row.components.some((c) => c.customId === id));
+  if (!await hasBotMessage(made.verificacao, (m) => hasButton(m, 'verify_btn'))) {
+    await sendVerifyPanel(made.verificacao, guild.roles.cache.get(cfg.verifyRole), made.regras);
   }
   const { CHANGELOG, buildPage } = require('./changelog');
   if (!await hasBotMessage(made.novidades, (m) => m.embeds.some((e) => e.title?.includes(`Versão ${CHANGELOG[0].version}`)))) {
@@ -906,6 +945,22 @@ async function setupEssentialChannels(guild, client) {
     await made.cargos.send(buildSelfRolesPanel(guild, cfg));
   }
 
+  // Painéis de compra: cargo personalizado, loja/mercado e a Central de Ajuda fixa
+  const painelExtra = async (nome, canal, id, montar) => {
+    try {
+      if (!await hasBotMessage(canal, (m) => hasButton(m, id))) await canal.send(montar());
+    } catch (err) {
+      console.error(`[setup] painel ${nome}:`, err.message);
+    }
+  };
+  if (cfg.setupRoles?.suporte) { cfg.customRoleAnchor = cfg.setupRoles.suporte; saveConfig(); } // cargos comprados nascem logo abaixo do Suporte
+  await painelExtra('cargo personalizado', made.cargoPersonalizado, 'role_create', () => require('./roles').panelMessage());
+  await painelExtra('loja', made.loja, 'eco_cat_veiculos', () => {
+    const eco = require('./economy');
+    return { embeds: [eco.getMarketPanelEmbed()], components: eco.getMarketPanelButtons() };
+  });
+  await painelExtra('ajuda', made.comandosBot, 'help_novidades', () => require('./help').helpPanelMessage());
+
   return { criados, made, canais: { regras: made.regras, novidades: made.novidades, welcome: made.welcome, sugestoes: made.sugestoes, logs: made.logs } };
 }
 
@@ -915,7 +970,7 @@ async function handleSelfRole(interaction) {
   const { guild, member } = interaction;
   const roleId = SELF_ROLES[key] ? getGuildConfig(guild.id).setupRoles?.[key] : null;
   const role = roleId ? guild.roles.cache.get(roleId) : null;
-  if (!role || role.managed) return interaction.reply(eph('❌ Esse cargo não existe mais. Peça à staff para rodar `/setup`.'));
+  if (!role || role.managed) return interaction.reply(eph(`❌ Esse cargo não existe mais. Peça à staff para rodar \`${PREFIX}setup\`.`));
   if (role.permissions.bitfield !== 0n) return interaction.reply(eph('❌ Esse cargo tem permissões e não pode ser pego por botão. Avise a staff.'));
   try {
     if (member.roles.cache.has(role.id)) {
@@ -953,7 +1008,9 @@ function confirmRebuildPayload(userId) {
     .setDescription([
       '🗑️ **Apaga todos os canais e cargos** (menos o que o Discord não permite apagar e os itens protegidos abaixo).',
       '🛡️ **Protegidos:** o canal de backup do bot e os cargos personalizados/VIP comprados na loja.',
-      `🏗️ **Recria:** ${Object.keys(SETUP_ROLES).length - 1} cargos + cargos de nível, ${SERVER_LAYOUT.length + 1} categorias e ${canais} canais, logs, tickets, regras, verificação, sugestões, guia e painéis, com as permissões de cada cargo.`,
+      `🏗️ **Recria:** ${Object.keys(SETUP_ROLES).length - 1} cargos + cargos de nível, ${SERVER_LAYOUT.length + 1} categorias e ${canais} canais, logs, tickets, regras, sugestões, guia, loja, cargo personalizado, ajuda e todos os painéis, com as permissões de cada cargo.`,
+      '🔒 **Verificação:** quem entrar sem o cargo Membro só vê a verificação e as regras. O resto do servidor aparece depois de clicar em Verificar-me.',
+      '💾 **Backup:** ao terminar, o bot manda uma cópia da configuração nova para o canal de backup.',
       '👥 **Equipe:** quem tinha cargo com nome equivalente (dono, sub dono, coordenador, hmod, moderador, suporte...) recebe o cargo novo. Cargos antigos fora desse modelo não voltam.',
       '',
       '**Isso não pode ser desfeito.** Esta confirmação vale por 60 segundos.'
@@ -1076,6 +1133,7 @@ async function rebuildServer(guild, client, user) {
     for (const k of RESET_KEYS) delete cfg[k];
     cfg.setupRoles = {};
     cfg.setupChannels = {};
+    cfg.gateEnabled = true; // só quem se verificar (cargo Membro) enxerga o servidor
     for (const [id, ticket] of Object.entries(ticketBucket(guild.id))) {
       if (ticket.status === 'open') delete ticketBucket(guild.id)[id]; // os canais desses tickets foram apagados
     }
@@ -1093,27 +1151,41 @@ async function rebuildServer(guild, client, user) {
     saveConfig();
 
     /* 6) Recria tudo */
-    const cargos = await setupEssentialRoles(guild, { avoid: cargosPagos, baseline: true });
+    const cargos = await setupEssentialRoles(guild, { avoid: cargosPagos, baseline: true, gate: true });
     if (cargos.reduzidos.length) {
       rel.avisos.push(`Sem a permissão **Administrador** no bot, criei com permissões reduzidas: ${cargos.reduzidos.join(', ')}.`);
     }
     if (invokerPrecisaAdmin && cfg.setupRoles.subdono) extras.set(user.id, cfg.setupRoles.subdono);
-    const estrutura = await setupEssentialChannels(guild, client);
-    await setupTicketSystem(guild, client);
+    // Cargos pagos que ficaram (personalizados e VIP) sobem para logo abaixo do Suporte, onde a cor aparece
+    const suporteRole = guild.roles.cache.get(cfg.setupRoles.suporte);
+    if (suporteRole) {
+      await guild.roles.fetch().catch(() => {});
+      const { placeRoleBelow } = require('./utils');
+      for (const id of cargosPagos) {
+        const paga = guild.roles.cache.get(id);
+        if (paga) await placeRoleBelow(guild, paga, suporteRole);
+      }
+    }
+    const estrutura = await setupEssentialChannels(guild, client, { gate: true });
+    await setupTicketSystem(guild, client, { gate: true });
 
-    // O canal de backup (se foi mantido) vai para a categoria da equipe
+    // Devolve a equipe e o dono primeiro (assim quem pediu já enxerga os canais privados)
     const categoriaStaff = estrutura.made.categoriaStaff;
     for (const id of protegidosCanais) {
       await guild.channels.cache.get(id)?.setParent(categoriaStaff.id, { lockPermissions: false }).catch(() => {});
     }
 
-    /* 7) Devolve a equipe e o dono primeiro (assim quem pediu já enxerga os canais privados) */
-    const prioridade = [...membros.values()].filter((m) => staffMap.has(m.id) || m.id === user.id || m.id === guild.ownerId);
+    /* 7) Devolve cargos: equipe, dono e bots primeiro (sem o cargo Membro/Bots ninguém vê os canais fechados) */
+    const prioridade = [...membros.values()].filter((m) => staffMap.has(m.id) || m.id === user.id || m.id === guild.ownerId || m.user.bot);
     const idsPrioridade = new Set(prioridade.map((m) => m.id));
     const restantes = [...membros.values()].filter((m) => !idsPrioridade.has(m.id)).slice(0, 1000);
     const parte1 = await restoreMemberRoles(guild, prioridade, staffMap, extras);
 
-    /* 8) Relatório (no canal de logs novo e na DM de quem pediu) */
+    /* 8) Backup com a configuração nova (o canal de backup guarda tudo e restaura ao reiniciar) */
+    const backup = await require('./backup').backupAfterSetup(guild, client, user).catch((err) => ({ ok: false, reason: err.message }));
+    if (backup.criado && backup.canal) await backup.canal.setParent(categoriaStaff.id, { lockPermissions: false }).catch(() => {});
+
+    /* 9) Relatório (no canal de logs novo e na DM de quem pediu) */
     const contagem = STAFF_KEYS.map((k) => [k, [...staffMap.values()].filter((s) => s.has(k)).length]).filter(([, n]) => n > 0)
       .map(([k, n]) => `${SETUP_ROLES[k].name}: **${n}**`);
     const campos = [
@@ -1125,10 +1197,15 @@ async function rebuildServer(guild, client, user) {
     if (rel.canaisMantidos.length) mantidos.push(`Canais: ${rel.canaisMantidos.slice(0, 6).map((n) => `\`${n}\``).join(', ')}${rel.canaisMantidos.length > 6 ? '…' : ''}`);
     if (rel.cargosMantidos) mantidos.push(`${rel.cargosMantidos} cargo(s) (pagos na loja${rel.cargosAcima ? ` ou acima do meu cargo: ${rel.cargosAcima}` : ''})`);
     if (mantidos.length) campos.push({ name: '🛡️ Mantido', value: truncate(mantidos.join('\n'), 1024), inline: false });
+    campos.push({
+      name: '💾 Backup',
+      value: backup.ok ? `✅ Cópia enviada para <#${backup.canal.id}>${backup.criado ? ' (canal criado agora)' : ''}.` : `⚠️ Não rodei o backup: ${backup.reason}.`,
+      inline: false
+    });
     if (rel.avisos.length) campos.push({ name: '⚠️ Atenção', value: truncate(rel.avisos.join('\n'), 1024), inline: false });
     campos.push({
       name: '📌 Próximos passos',
-      value: 'Deixe o **meu cargo no topo** da lista de cargos. Cargos antigos fora do modelo novo não voltaram: crie e atribua à mão se precisar. Membros e bots estão recebendo os cargos em segundo plano.',
+      value: 'Deixe o **meu cargo no topo** da lista de cargos. Quem entrar agora só vê **✅・verificação** e **📖・regras** até clicar em Verificar-me. Cargos antigos fora do modelo novo não voltaram: crie e atribua à mão se precisar. Os membros estão recebendo o cargo **Membro** em segundo plano (quem não receber é só verificar).',
       inline: false
     });
     const relatorio = new EmbedBuilder().setColor(0x2ECC71).setTitle('✅ Servidor recriado do zero')
@@ -1136,10 +1213,7 @@ async function rebuildServer(guild, client, user) {
       .addFields(campos).setTimestamp();
     const mensagem = await sendRebuildNotice(guild, user, { embeds: [relatorio] });
 
-    // O canal de backup guarda a configuração: salva já com os IDs novos
-    require('./backup').pushBackup(client, { force: true }).catch(() => {});
-
-    /* 9) Resto dos membros em segundo plano */
+    /* 10) Resto dos membros em segundo plano */
     const parte2 = await restoreMemberRoles(guild, restantes, staffMap, extras);
     const total = parte1.ok + parte2.ok;
     const falhas = parte1.falhas + parte2.falhas;
@@ -1149,7 +1223,7 @@ async function rebuildServer(guild, client, user) {
   } catch (err) {
     console.error('[setup completo]', err);
     const aviso = new EmbedBuilder().setColor(0xE74C3C).setTitle('❌ O setup completo parou no meio')
-      .setDescription(`${describeError(err) || 'Erro inesperado.'}\n\nO que já foi apagado/criado continua assim. Rode **\`/setup acao:atualizar\`** para completar o que faltou (ele não apaga nada).`);
+      .setDescription(`${describeError(err) || 'Erro inesperado.'}\n\nO que já foi apagado/criado continua assim. Rode **\`${PREFIX}setup atualizar\`** para completar o que faltou (ele não apaga nada).`);
     await sendRebuildNotice(guild, user, { embeds: [aviso] }).catch(() => {});
   } finally {
     rebuilding.delete(guild.id);
@@ -1171,7 +1245,7 @@ async function handleSetupButton(interaction) {
   const pendente = pendingRebuild.get(guild.id);
   if (!pendente || pendente.userId !== userId || pendente.expires < Date.now()) {
     pendingRebuild.delete(guild.id);
-    return interaction.update({ content: '⌛ A confirmação expirou. Use `/setup` de novo.', embeds: [], components: [] });
+    return interaction.update({ content: `⌛ A confirmação expirou. Use \`${PREFIX}setup\` de novo.`, embeds: [], components: [] });
   }
   if (!canRebuildServer(interaction.member)) {
     return interaction.reply(eph('❌ Só o dono do servidor ou quem tem **Administrador** pode fazer isso.'));
@@ -1187,8 +1261,9 @@ async function handleSetupButton(interaction) {
   rebuildServer(guild, interaction.client, interaction.user).catch((err) => console.error('[setup completo]', err));
 }
 
-async function setupTicketSystem(guild, client) {
+async function setupTicketSystem(guild, client, { gate } = {}) {
   const cfg = ensureGuildConfig(guild.id);
+  gate ??= !!cfg.gateEnabled;
   const me = client.user;
   const botFullAccess = [
     PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages,
@@ -1197,6 +1272,14 @@ async function setupTicketSystem(guild, client) {
     PermissionFlagsBits.ManageMessages
   ];
 
+  const staffIds = staffRoleIds(guild, cfg);
+  const verificados = [...new Set([cfg.setupRoles?.membro, cfg.setupRoles?.bots, ...staffIds].filter(Boolean))];
+  const categoriaOverwrites = gate ? [
+    { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+    { id: me.id, allow: botFullAccess },
+    ...verificados.map((id) => ({ id, allow: [PermissionFlagsBits.ViewChannel] }))
+  ] : null;
+
   let categoria = guild.channels.cache.get(cfg.ticketCategoryId);
   if (categoria?.type !== ChannelType.GuildCategory) categoria = null;
   categoria ||= guild.channels.cache.find((c) => c.type === ChannelType.GuildCategory && /^(?:🎫・)?atendimento$/i.test(c.name));
@@ -1204,11 +1287,13 @@ async function setupTicketSystem(guild, client) {
     categoria = await guild.channels.create({
       name: '🎫・atendimento',
       type: ChannelType.GuildCategory,
+      ...(categoriaOverwrites ? { permissionOverwrites: categoriaOverwrites } : {}),
       reason: 'Configuração do sistema de tickets'
     });
+  } else if (categoriaOverwrites) {
+    await categoria.permissionOverwrites.set(categoriaOverwrites, 'Atendimento só para verificados');
   }
 
-  const staffIds = staffRoleIds(guild, cfg);
   const staffOverwrites = [...staffIds].map((id) => ({ id, allow: TICKET_BASE_PERMS }));
   const adminUserOverwrites = (cfg.adminUsers || []).map((id) => ({ id, allow: TICKET_BASE_PERMS }));
   const privateOverwrites = [
@@ -1221,7 +1306,12 @@ async function setupTicketSystem(guild, client) {
   let painel = guild.channels.cache.get(cfg.ticketPanelChannelId);
   if (painel?.type !== ChannelType.GuildText) painel = null;
   painel ||= guild.channels.cache.find((c) => c.type === ChannelType.GuildText && /^(?:🎫・)?abrir-ticket$/i.test(c.name));
-  const painelOverwrites = [
+  const painelOverwrites = gate ? [
+    // Com a verificação ligada, só quem já é Membro (e a equipe) enxerga o atendimento
+    { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AddReactions] },
+    { id: me.id, allow: botFullAccess },
+    ...verificados.map((id) => ({ id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory] }))
+  ] : [
     {
       id: guild.roles.everyone.id,
       allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory],
@@ -1229,6 +1319,7 @@ async function setupTicketSystem(guild, client) {
     },
     { id: me.id, allow: botFullAccess }
   ];
+
   if (!painel) {
     painel = await guild.channels.create({
       name: '🎫・abrir-ticket',
@@ -1854,7 +1945,7 @@ const COMMANDS = {
     // Servidor completo: apaga tudo e recria. Pede confirmação e só vale para o dono ou Administrador.
     if (acao === 'completo') {
       if (!canRebuildServer(member)) {
-        return interaction.reply(eph('❌ O setup completo apaga e recria o servidor inteiro, então só o **dono do servidor** ou quem tem **Administrador** pode usar. Para só completar o que falta, use `/setup acao:atualizar`.'));
+        return interaction.reply(eph(`❌ O setup completo apaga e recria o servidor inteiro, então só o **dono do servidor** ou quem tem **Administrador** pode usar. Para só completar o que falta, use \`${PREFIX}setup atualizar\`.`));
       }
       const me = guild.members.me;
       if (!me?.permissions.has(PermissionFlagsBits.ManageChannels) || !me.permissions.has(PermissionFlagsBits.ManageRoles)) {
@@ -1887,6 +1978,10 @@ const COMMANDS = {
       if (acao === 'atualizar' || acao === 'emojis') {
         const r = await decorateGuildChannels(guild);
         resposta.push(`✨ Emojis: **${r.alterados}** canal(is) atualizado(s)${r.falhas ? ` • **${r.falhas}** falha(s)` : ''}.`);
+      }
+      if (acao === 'atualizar') {
+        const backup = await require('./backup').backupAfterSetup(guild, interaction.client, interaction.user).catch((err) => ({ ok: false, reason: err.message }));
+        resposta.push(backup.ok ? `💾 Backup enviado para <#${backup.canal.id}>.` : `⚠️ Backup não rodou: ${backup.reason}.`);
       }
       resposta.push('', `Painéis extras: \`${PREFIX}ticket\` e \`${PREFIX}painel-sugestao\`. Veja tudo com \`${PREFIX}help\`.`);
       await interaction.editReply({ content: truncate(resposta.join('\n'), 1990) });

@@ -195,4 +195,7 @@ async function handleHelpInteraction(interaction) {
 /** Lista (para testes/diagnóstico) de comandos que aparecem na ajuda. */
 const listedCommands = () => pages.flatMap((p) => p.nomes);
 
-module.exports = { helpSlashCommands, handledCommands, handleHelpInteraction, setHelpSources, buildPage, listedCommands, totalPages };
+/** Painel fixo de ajuda (o /setup posta no canal de comandos). Os botões e o menu já são tratados acima. */
+const helpPanelMessage = () => ({ embeds: [buildPage(0)], components: buildComponents(0) });
+
+module.exports = { helpSlashCommands, handledCommands, handleHelpInteraction, setHelpSources, buildPage, listedCommands, totalPages, helpPanelMessage };

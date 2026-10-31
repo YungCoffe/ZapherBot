@@ -1174,4 +1174,4 @@ function paidRoleIds(guildId) {
   return ids;
 }
 
-module.exports = { paidRoleIds, economySlashCommands, handledCommands, handleEconomyInteraction, startEconomyScheduler, giveMoney, earnMoney, chargeUser, getUserAccount, saveEcoData, fmt };
+module.exports = { getMarketPanelEmbed, getMarketPanelButtons, paidRoleIds, economySlashCommands, handledCommands, handleEconomyInteraction, startEconomyScheduler, giveMoney, earnMoney, chargeUser, getUserAccount, saveEcoData, fmt };

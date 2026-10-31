@@ -13,12 +13,15 @@ const { eph, respond, describeError } = require('./utils');
 
 const CHANGELOG = [
   {
-    version: '2.7.0', data: '30/10/2026', titulo: 'Setup que recria o servidor e ticket só marca o Suporte',
+    version: '2.7.0', data: '30/10/2026', titulo: 'Setup que recria o servidor, verificação obrigatória e ticket só marca o Suporte',
     itens: [
-      '🏗️ **`/setup` recria tudo do zero**: apaga canais e cargos e cria de novo a hierarquia (Dono, Sub Dono, Coordenador, HMod, Moderador, Staff, Suporte), cargos de nível, cargos de interesse, categorias e canais (informações, comunidade, jogos, criatividade, economia, voz e staff), logs, tickets, regras, verificação, sugestões, guia e painel de cargos, já com as permissões de cada cargo.',
-      '🛡️ **Segurança**: só o dono ou um Administrador usa, pede confirmação em botão (vale 60 segundos) e protege o canal de backup e os cargos pagos na loja. Quem tinha cargo equivalente (dono, sub dono, coordenador, hmod, moderador, suporte) recebe o novo automaticamente.',
-      '🔄 **`/setup acao:atualizar`**: o setup antigo, que não apaga nada e só completa o que falta.',
-      '🎫 **Tickets**: ao abrir, só o cargo **Suporte** é marcado. Os demais cargos da equipe continuam vendo e atendendo o ticket, só não recebem a marcação.',
+      '🏗️ **`?setup` recria tudo do zero**: apaga canais e cargos e cria de novo a hierarquia (Dono, Sub Dono, Coordenador, HMod, Moderador, Staff, Suporte), cargos VIP da loja, cargos de nível e de interesse, 9 categorias e cerca de 45 canais, logs, tickets e todos os painéis, já com as permissões de cada cargo e canal.',
+      '🔒 **Verificação obrigatória**: quem entra sem o cargo Membro só vê **verificação** e **regras**. O resto do servidor aparece depois de clicar em Verificar-me.',
+      '🧩 **Painéis configurados sozinhos**: verificação, regras, tickets, sugestões, cargos de interesse, **cargo personalizado**, **loja/mercado**, Central de Ajuda, novidades e guia do servidor.',
+      '💾 **Backup**: ao terminar o setup, o bot manda uma cópia da configuração nova para o canal de backup.',
+      '🛡️ **Segurança**: só o dono ou um Administrador usa, pede confirmação por botão (60 segundos) e protege o canal de backup e os cargos comprados na loja. Quem tinha cargo equivalente (dono, sub dono, coordenador, hmod, moderador, suporte) recebe o novo automaticamente.',
+      '🔄 **`?setup atualizar`**: o setup antigo, que não apaga nada e só completa o que falta.',
+      '🎫 **Tickets**: ao abrir, só o cargo **Suporte** é marcado. Os demais cargos da equipe continuam vendo e atendendo o ticket.',
       '🏷️ **Painel de cargos**: avisos, eventos, sorteios, gamer, dev e designer por botão.'
     ]
   },
