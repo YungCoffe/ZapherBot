@@ -1274,7 +1274,9 @@ async function rebuildServer(guild, client, user) {
     });
     campos.push({
       name: '💾 Backup',
-      value: backup.ok ? `✅ Cópia enviada para <#${backup.canal.id}>${backup.criado ? ' (canal criado agora)' : ''}.` : `⚠️ Não rodei o backup: ${backup.reason}.`,
+      value: backup.ok
+        ? `✅ Cópia enviada para ${backup.outroServidor ? `**#${backup.canal.name}** do servidor **${backup.canal.guild?.name}** (não há canal de backup aqui e você não é o dono do bot)` : `<#${backup.canal.id}>`}${backup.criado ? ' (canal criado agora neste servidor)' : ''}.${(backup.avisos || []).map((a) => `\n⚠️ ${a}`).join('')}`
+        : `⚠️ Não rodei o backup: ${backup.reason}.`,
       inline: false
     });
     if (rel.avisos.length) campos.push({ name: '⚠️ Atenção', value: truncate(rel.avisos.join('\n'), 1024), inline: false });
@@ -2062,7 +2064,9 @@ const COMMANDS = {
       }
       if (acao === 'atualizar') {
         const backup = await require('./backup').backupAfterSetup(guild, interaction.client, interaction.user).catch((err) => ({ ok: false, reason: err.message }));
-        resposta.push(backup.ok ? `💾 Backup enviado para <#${backup.canal.id}>.` : `⚠️ Backup não rodou: ${backup.reason}.`);
+        resposta.push(backup.ok
+          ? `💾 Backup enviado para ${backup.outroServidor ? `**#${backup.canal.name}** do servidor **${backup.canal.guild?.name}**` : `<#${backup.canal.id}>`}${backup.criado ? ' (canal criado agora neste servidor)' : ''}.${(backup.avisos || []).map((a) => `\n⚠️ ${a}`).join('')}`
+          : `⚠️ Backup não rodou: ${backup.reason}.`);
         if (trancado) {
           await unlockGuild(guild).then(() => resposta.push('🔓 Servidor destrancado.')).catch(() => resposta.push('⚠️ Não consegui destrancar o servidor: confira o @everyone.'));
           trancado = false;

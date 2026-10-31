@@ -96,13 +96,25 @@ async function findChannel(client) {
     if (ch && usable(ch, ch.guild?.members.me)) return (channelCache = ch);
     console.warn('[backup] BACKUP_CHANNEL_ID definido, mas não consigo usar esse canal (confira o ID e as permissões do bot).');
   }
+  // Pode existir um canal de backup em mais de um servidor: vale o que tem a cópia MAIS RECENTE
+  const candidatos = [];
   for (const guild of client.guilds.cache.values()) {
     const me = guild.members.me;
-    const ch = guild.channels.cache.find((c) => c.isTextBased?.() && !c.isThread?.()
-      && (c.name === CHANNEL_NAME || c.name === 'zapher-backup' || c.topic?.includes(MARKER)) && usable(c, me));
-    if (ch) return (channelCache = ch);
+    for (const c of guild.channels.cache.values()) {
+      if (c.isTextBased?.() && !c.isThread?.() && (c.name === CHANNEL_NAME || c.name === 'zapher-backup' || c.topic?.includes(MARKER)) && usable(c, me)) candidatos.push(c);
+    }
   }
-  return null;
+  if (candidatos.length <= 1) return (channelCache = candidatos[0] || null);
+  let melhor = candidatos[0];
+  let melhorTs = -1;
+  for (const c of candidatos) {
+    const msgs = await c.messages.fetch({ limit: 20 }).catch(() => null);
+    const ultima = msgs && [...msgs.values()].filter((m) => m.author.id === client.user.id && m.content.includes(MARKER))
+      .sort((a, b) => b.createdTimestamp - a.createdTimestamp)[0];
+    const ts = ultima?.createdTimestamp ?? 0;
+    if (ts > melhorTs) { melhor = c; melhorTs = ts; }
+  }
+  return (channelCache = melhor);
 }
 
 /* ============================================================
@@ -348,8 +360,11 @@ async function handleBackupInteraction(interaction) {
  * Só cria o canal se quem pediu o setup é o dono do bot (o backup guarda dados de todo mundo).
  */
 async function backupAfterSetup(guild, client, user) {
-  let canal = await findChannel(client);
+  const me = guild.members.me;
+  // 1) O backup vai para o canal de backup DESTE servidor (onde o setup foi feito)
+  let canal = [...guild.channels.cache.values()].find((c) => isBackupChannel(c) && usable(c, me)) || null;
   let criado = false;
+  // 2) Não existe aqui: o dono do bot cria o canal neste servidor
   if (!canal && require('./perms').isOwner(user.id)) {
     canal = await guild.channels.create({
       name: CHANNEL_NAME,
@@ -358,11 +373,20 @@ async function backupAfterSetup(guild, client, user) {
       permissionOverwrites: backupOverwrites(guild, user.id, client.user.id),
       reason: 'Setup: canal de backup do bot'
     }).catch(() => null);
-    if (canal) { channelCache = canal; criado = true; }
+    if (canal) criado = true;
   }
-  if (!canal) return { ok: false, reason: 'ainda não existe canal de backup (o dono do bot precisa rodar `?backup` uma vez)' };
+  // 3) Quem pediu não é o dono do bot: usa o canal que já existe em outro servidor
+  canal ||= await findChannel(client);
+  if (!canal) return { ok: false, reason: 'ainda não existe canal de backup (o dono do bot precisa rodar `?backup configurar` uma vez)' };
+
+  channelCache = canal; // a partir de agora (e depois de reiniciar, por ser o mais recente) os backups vão para este canal
   const r = await pushBackup(client, { force: true });
-  return { ...r, canal, criado };
+  const avisos = [];
+  const envId = process.env.BACKUP_CHANNEL_ID;
+  if (r.ok && envId && envId !== canal.id) {
+    avisos.push(`A variável **BACKUP_CHANNEL_ID** do Render aponta para outro canal. Troque o valor para \`${canal.id}\` (ou apague a variável) para os backups continuarem aqui depois de reiniciar.`);
+  }
+  return { ...r, canal, criado, outroServidor: canal.guild?.id !== guild.id, avisos };
 }
 
 /** É o canal privado de backup do bot? (o setup completo nunca o apaga) */
