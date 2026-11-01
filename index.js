@@ -76,6 +76,13 @@ const {
   handleAiInteraction,
   handleAiMention
 } = require('./ai.js');
+const {
+  zoeiraSlashCommands,
+  handledCommands: zoeiraHandled,
+  handleZoeiraInteraction,
+  handleZoeiraMessage,
+  startZoeira
+} = require('./zoeira.js');
 const { createPrefixHandler } = require('./hybrid.js');
 const { flushAll } = require('./storage.js');
 const { PREFIX } = require('./utils.js');
@@ -107,7 +114,7 @@ const client = new Client({
 const allBuilders = [
   ...allSlashCommands, ...economySlashCommands, ...funSlashCommands, ...aiSlashCommands,
   ...levelsSlashCommands, ...rolesSlashCommands, ...expressionsSlashCommands, ...helpSlashCommands,
-  ...backupSlashCommands, ...changelogSlashCommands, ...empresasSlashCommands
+  ...backupSlashCommands, ...changelogSlashCommands, ...empresasSlashCommands, ...zoeiraSlashCommands
 ];
 
 // O Discord só aceita 100 slash commands. Estes funcionam apenas com o prefixo
@@ -132,6 +139,7 @@ async function dispatch(interaction) {
   await handleBackupInteraction(interaction);
   await handleChangelogInteraction(interaction);
   await handleEmpresasInteraction(interaction);
+  await handleZoeiraInteraction(interaction);
 }
 
 const handlePrefix = createPrefixHandler({ builders: allBuilders, dispatch });
@@ -176,7 +184,7 @@ client.once(Events.ClientReady, async (c) => {
     if (duplicados.length) console.warn('⚠️ Comandos duplicados:', [...new Set(duplicados)].join(', '));
     if (nomes.length > 100) console.warn(`⚠️ ${nomes.length} slash commands (o limite do Discord é 100): o registro vai falhar.`);
 
-    const tratados = new Set([...ticketHandled, ...economyHandled, ...funHandled, ...aiHandled, ...levelsHandled, ...rolesHandled, ...expressionsHandled, ...helpHandled, ...backupHandled, ...changelogHandled, ...empresasHandled]);
+    const tratados = new Set([...ticketHandled, ...economyHandled, ...funHandled, ...aiHandled, ...levelsHandled, ...rolesHandled, ...expressionsHandled, ...helpHandled, ...backupHandled, ...changelogHandled, ...empresasHandled, ...zoeiraHandled]);
     const semHandler = allBuilders.map((cmd) => cmd.name).filter((n) => !tratados.has(n));
     if (semHandler.length) console.warn('⚠️ Comandos registrados sem handler:', semHandler.join(', '));
 
@@ -190,6 +198,7 @@ client.once(Events.ClientReady, async (c) => {
   startEconomyScheduler(c);
   startFunScheduler(c);
   startBackupScheduler(c);
+  startZoeira(c); // desfaz apelidos/cargos temporários vencidos (inclusive os que ficaram de antes de reiniciar)
 
   const link = inviteUrl(c);
   if (link) console.log(`🔗 Link para adicionar o bot em qualquer servidor:\n${link}`);
@@ -246,6 +255,7 @@ client.on(Events.MessageCreate, async (message) => {
     if (await handlePrefix(message)) return;      // comandos com prefixo
     if (await handleAiMention(message)) return;   // @Bot pergunta...
     await handleXp(message);                      // XP de nível
+    await handleZoeiraMessage(message);           // zoeira automática (só onde a equipe ligou)
   } catch (err) {
     console.error('[messageCreate]', err);
   }

@@ -957,6 +957,10 @@ async function setupEssentialChannels(guild, client, { gate } = {}) {
   cfg.changelogChannelId = made.novidades.id;
   cfg.automod ??= true;
   cfg.setupCompletedAt = Date.now();
+  // Zoeira automática: o setup só escolhe os canais de conversa; quem liga é a equipe (?zoeira ligar)
+  cfg.zoeira ??= { ligada: false, nivel: 'maluco', canais: [], sair: [] };
+  const vivos = (cfg.zoeira.canais || []).filter((id) => guild.channels.cache.has(id));
+  cfg.zoeira.canais = vivos.length ? vivos : ['chatGeral', 'memes', 'midia', 'chatGames', 'lfg', 'clipes'].map((k) => made[k]?.id).filter(Boolean);
   saveConfig();
 
   // Canal AFK do servidor

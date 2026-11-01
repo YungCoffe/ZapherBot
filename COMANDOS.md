@@ -1,6 +1,6 @@
 # Comandos do Zapher Bot (versão 2.7.0)
 
-São **100 comandos**: 97 funcionam com `/` e com o prefixo `?`, e 3 funcionam **só com o prefixo** (`?backup`, `?logs`, `?setup`).
+São **101 comandos**: 98 funcionam com `/` e com o prefixo `?`, e 3 funcionam **só com o prefixo** (`?backup`, `?logs`, `?setup`).
 Em cada linha: `<obrigatório>` `[opcional]`. A permissão entre parênteses é a que o Discord exige de quem usa (Administrador usa tudo). A lista é gerada a partir do código e é a mesma que aparece em `/help`.
 
 ## 🛡️ Moderação (19)
@@ -44,7 +44,7 @@ Em cada linha: `<obrigatório>` `[opcional]`. A permissão entre parênteses é 
 - `/setadminuser <usuario>` — Adiciona um usuário com permissões administrativas do bot *(🔒 Administrador)*
 - `/deladminrole <cargo>` — Remove um cargo da administração do bot *(🔒 Administrador)*
 - `/deladminuser <usuario>` — Remove um usuário da administração do bot *(🔒 Administrador)*
-- `/ia [status] [testar|comparar]` — Liga/desliga a IA, mostra o estado ou testa os modelos (staff). `testar` roda do mais barato ao mais caro até achar um que responda; `comparar` testa todos e fica com o que gasta menos token *(🔒 Gerenciar Servidor)*
+- `/ia [status] [testar|comparar]` — Liga/desliga a IA, mostra o estado ou testa os modelos (staff) *(🔒 Gerenciar Servidor)*
 - `?backup [status|configurar|agora|recuperar|exportar|restaurar] [arquivo] [canal]` — Backup e restauração dos dados do bot (só o dono) *(🔒 dono do bot)*
 
 ## 💳 Economia — Conta (14)
@@ -104,9 +104,10 @@ Em cada linha: `<obrigatório>` `[opcional]`. A permissão entre parênteses é 
 - `/criaremoji <nome> [imagem] [emoji]` — Cria um emoji no servidor a partir de uma imagem ou de outro emoji *(🔒 Gerenciar Expressões)*
 - `/criarfigurinha <nome> <imagem> [tags]` — Cria uma figurinha (sticker) no servidor a partir de uma imagem *(🔒 Gerenciar Expressões)*
 
-## 🤖 IA & Diversão (7)
+## 🤖 IA & Diversão (8)
 
 - `/perguntar <pergunta>` — Faz uma pergunta à inteligência artificial
+- `/zoeira [status|ligar|desligar|nivel|canal|desfazer|sair|entrar] [leve|medio|maluco] [canal]` — Zoeira automática: o bot age sozinho no papo (liga/desliga, nível, canais, sair)
 - `/8ball <pergunta>` — Faz uma pergunta à bola mágica
 - `/dado [lados] [quantidade]` — Rola um ou mais dados
 - `/escolher <opcoes>` — O bot escolhe uma opção por ti
@@ -138,9 +139,9 @@ Em cada linha: `<obrigatório>` `[opcional]`. A permissão entre parênteses é 
 | 📖 Regras | 📖・regras | — |
 | 🎫 Tickets (dúvida e denúncia) | 🎫・abrir-ticket | `/ticket` |
 | 💡 Sugestões | 💡・sugestões | `/painel-sugestao` |
-| 🏷️ Cargos de interesse (avisos, eventos, sorteios, gamer, dev, designer) | 🏷️・pegar-cargos | — |
+| 🏷️ Cargos de interesse | 🏷️・pegar-cargos | — |
 | 🎨 Cargo personalizado (compra com nome e cor) | 🎨・cargo-personalizado | `/painel-cargos` |
-| 🛒 Loja e mercado (veículos, casas, VIP, upgrades...) | 🛒・loja | `/loja` |
+| 🛒 Loja e mercado | 🛒・loja | `/loja` |
 | 📖 Central de Ajuda | 🤖・comandos-bot | `/help` |
 | 📰 Novidades | 📰・novidades | `/novidades` |
 | 🧭 Guia do servidor | 🧭・guia-do-servidor | — |
@@ -148,10 +149,15 @@ Em cada linha: `<obrigatório>` `[opcional]`. A permissão entre parênteses é 
 ## 🔒 Como o `?setup` deixa o servidor
 
 - `?setup` (ou `?setup completo`): apaga canais e cargos e recria tudo. Pede confirmação por botão e só o dono do servidor ou um Administrador usa.
-- `?setup atualizar`: não apaga nada, só completa o que faltar.
-- `?setup tickets` e `?setup emojis`: etapas isoladas.
+- `?setup atualizar`: não apaga nada, só completa o que faltar. `?setup tickets` e `?setup emojis`: etapas isoladas.
 - Quem entra **sem o cargo Membro** vê só ✅・verificação e 📖・regras. O restante aparece depois de clicar em **Verificar-me**.
 - **Trava:** durante o setup o servidor fica trancado (ninguém escreve em nenhum canal) e é destrancado no fim, mesmo se o setup falhar. Depois disso, **painéis, regras, guia, loja, novidades, níveis, sugestões e logs ficam trancados para todos**, até para a equipe (só o bot escreve; só quem tem Administrador consegue). Nos anúncios, eventos, sorteios, parcerias e enquetes só a equipe escreve. Os demais canais de texto são trancados para quem não é Membro.
-- Cargos pagos na loja (personalizados e VIP) e o canal de backup nunca são apagados. Ao final, o bot envia um backup.
+- Cargos pagos na loja (personalizados e VIP) e o canal de backup nunca são apagados. Ao final, o bot envia um backup **para o canal de backup do próprio servidor**.
 - O setup também **atualiza** as mensagens fixas que já existirem (novidades, guia, ajuda, loja, cargo personalizado, verificação e cargos de interesse).
-- No `/help` há uma página nova, **🧩 Painéis & Setup**, e o painel de ajuda fica fixo em 🤖・comandos-bot.
+
+## 🎭 Zoeira automática (`?zoeira`)
+
+O bot pode agir **sozinho** no papo, sem ninguém digitar comando: reage, responde, troca apelidos (volta em 15 min), dá cargos de enfeite sem permissões (somem em 20 min) e silencia por **5 a 60 segundos**.
+- **Desligada por padrão.** A equipe liga com `?zoeira ligar` e escolhe o nível (`leve`, `medio`, `maluco`) e os canais. `?zoeira desfazer` reverte tudo na hora.
+- Qualquer pessoa pode sair com `?zoeira sair` (o bot para de mexer nela e de ler suas mensagens para isso) e voltar com `?zoeira entrar`.
+- Travas no código: nunca mexe em bots, no dono do servidor nem em quem saiu; a equipe nunca é silenciada; só age em quem está na conversa; limites por hora, por pessoa e por dia; para 30 min quando o papo fica sério; bloqueia xingamento pesado, preconceito e nomes que se passam por staff; tudo vai para o canal de logs.

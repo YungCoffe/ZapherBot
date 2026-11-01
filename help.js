@@ -24,7 +24,7 @@ const CATEGORIES = [
   { emoji: '🎮', nome: 'Jogos & Loja', cmds: ['loja', 'apostar', 'slots', 'coinflip', 'roleta', 'blackjack', 'roubar', 'crime'] },
   { emoji: '⭐', nome: 'Níveis & Cargos', cmds: ['nivel', 'ranknivel', 'cargosnivel', 'painel-cargos'] },
   { emoji: '🎨', nome: 'Emojis & Figurinhas', cmds: ['criaremoji', 'criarfigurinha'] },
-  { emoji: '🤖', nome: 'IA & Diversão', cmds: ['perguntar', '8ball', 'dado', 'escolher', 'enquete', 'lembrete', 'sorteio'] },
+  { emoji: '🤖', nome: 'IA & Diversão', cmds: ['perguntar', 'zoeira', '8ball', 'dado', 'escolher', 'enquete', 'lembrete', 'sorteio'] },
   { emoji: '🧰', nome: 'Utilidades & Suporte', cmds: ['help', 'novidades', 'ping', 'botinfo', 'avatar', 'userinfo', 'serverinfo', 'say', 'embed', 'ticket', 'painel-sugestao', 'sugerir', 'denuncia'] }
 ];
 
@@ -72,6 +72,8 @@ function setupInfoText() {
     `• \`${PREFIX}setup\` — apaga canais e cargos e recria tudo do zero (pede confirmação)`,
     `• \`${PREFIX}setup atualizar\` — só completa o que faltar, sem apagar nada`,
     `• \`${PREFIX}setup tickets\` e \`${PREFIX}setup emojis\` — etapas isoladas`,
+    '',
+    `**🎭 Zoeira automática** — \`${PREFIX}zoeira ligar\` (staff): o bot passa a agir sozinho no papo, sem comando: reage, responde, troca apelidos, dá cargos de enfeite e silencia por segundos. A equipe nunca é silenciada e tudo volta ao normal sozinho. Quem não quiser ser alvo usa \`${PREFIX}zoeira sair\`.`,
     '',
     '**🔐 Durante o setup** o servidor fica **trancado** (ninguém escreve) e é destrancado no fim. Canais de painel, regras, guia, loja e logs ficam **trancados para todos** (só o bot escreve; a equipe só lê). Os demais canais de texto ficam trancados para quem não é Membro. Ao terminar, o bot envia um **backup**.'
   ].join('\n');

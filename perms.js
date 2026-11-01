@@ -103,6 +103,7 @@ function requirementFor(interaction) {
   const o = interaction.options;
   if (name === 'warnings') return o?.getUser?.('usuario')?.id === interaction.user.id ? null : 'ModerateMembers'; // ver os próprios avisos é livre
   if (name === 'cargosnivel') return o?.getString?.('acao') === 'listar' ? null : 'ManageRoles';
+  if (name === 'zoeira') return [null, undefined, 'status', 'sair', 'entrar'].includes(o?.getString?.('acao')) ? null : 'ManageGuild'; // ver o estado e sair da zoeira é livre
   return RULES[name];
 }
 

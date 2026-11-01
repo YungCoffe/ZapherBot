@@ -25,6 +25,7 @@ const CHANGELOG = [
       '🔄 **`?setup atualizar`**: o setup antigo, que não apaga nada e só completa o que falta.',
       '🎫 **Tickets**: ao abrir, só o cargo **Suporte** é marcado. Os demais cargos da equipe continuam vendo e atendendo o ticket.',
       '🏷️ **Painel de cargos**: avisos, eventos, sorteios, gamer, dev e designer por botão.',
+      '🎭 **Zoeira automática**: o bot pode agir sozinho no papo, sem comando (reagir, responder, trocar apelido, dar cargo de enfeite e silenciar por segundos). Desligada por padrão: a equipe liga com `?zoeira ligar`. A equipe nunca é silenciada, tudo volta ao normal sozinho, quem quiser sai com `?zoeira sair` e `?zoeira desfazer` reverte na hora.',
       '🤖 **IA com modelo automático**: o bot tenta os modelos do Gemini do mais barato ao mais caro (lite, flash, gemma, pro), pula os que falham ou estouram a cota e usa o primeiro que responde, com o "pensamento" reduzido ao mínimo. Use `?ia testar` ou `?ia comparar` para ver qual está pegando e qual gasta menos token.'
     ]
   },

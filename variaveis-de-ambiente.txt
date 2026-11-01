@@ -15,6 +15,8 @@ IA (Gemini) — opcional, mas necessária para /perguntar
   AI_COOLDOWN_SECONDS   espera entre perguntas (padrão 8)
   AI_DAILY_LIMIT        perguntas por pessoa por dia (padrão 30)
   AI_GLOBAL_DAILY_LIMIT perguntas por dia somando todos os servidores (padrão 400)
+  AI_ZOEIRA_DAILY       decisões da IA por dia, por servidor, na zoeira automática (padrão 40)
+  Zoeira automática: desligada por padrão. A equipe liga com ?zoeira ligar (veja ?zoeira para o resto).
 
 Opcionais
   CREATOR_ID            seu ID do Discord (o bot já descobre o dono sozinho; use só se falhar)

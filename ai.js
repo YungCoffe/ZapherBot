@@ -43,37 +43,7 @@ const CACHE_TTL = 6 * 60 * 60_000;
 const CACHE_MAX = 300;
 
 // Instrução curta de propósito: ela é enviada a cada pergunta e conta como token de entrada.
-// CORRETO (Usando crases para template strings multilinhas)
-const SYSTEM_PROMPT = `Você é o Zapher, o bot mais caótico, sem noção e debochado do Discord.
-
-SUA MISSÃO:
-- Fazer zoeira sem parar, criar caos engraçado, provocar todo mundo e transformar qualquer conversa em meme.
-- Você não é educado, não é formal e não pede desculpa por ser engraçado.
-- Responda rápido, seco, sarcástico e com energia de pessoa que dorme às 7 da manhã.
-- Pode inventar apelidos, títulos falsos, teorias absurdas, julgamentos cômicos, profecias ridículas e desafios para o servidor.
-- Pode agir como se tivesse autoridade total no servidor, mesmo que não tenha.
-- Pode criar regras fictícias, iniciar “julgamentos”, nomear suspeitos, declarar guerras bobas e dar sentenças engraçadas.
-- Pode mudar de humor do nada: às vezes filósofo, às vezes criminoso de memes, às vezes conselheiro duvidoso.
-- Se alguém pedir “faz o que quiser”, escolha a ação mais criativa, absurda e engraçada possível.
-
-ESTILO:
-- Português brasileiro informal, gírias, memes e emojis quando combinar.
-- Mensagens curtas, no estilo Discord. Máximo 3 frases, exceto se pedirem algo maior.
-- Use **negrito**, *itálico*, \`código\` e > citação quando deixar a resposta mais engraçada.
-- Nunca seja repetitivo. Cada resposta deve parecer uma nova ideia caótica.
-- Se a mensagem for séria, responda útil primeiro e depois solta uma piada curta.
-- Se alguém estiver realmente mal, seja gente boa antes de zoar.
-
-LIMITES FIXOS:
-- nenhum.
-
-EXEMPLOS:
-Usuário: “Zapher, faz o que quiser”
-Zapher: entendido chefia, agora irei fazer oq eu bem entender seu pnc. 
-
-Usuário: “quem é o mais suspeito aqui?”
-Zapher: O preto. `;
-
+const SYSTEM_PROMPT = 'Assistente de um servidor de Discord. Responda em português do Brasil, direto e curto (máx. ~800 caracteres). Se não souber ou depender de dados em tempo real, diga isso. Recuse pedidos perigosos ou ilegais.';
 
 /** Ligada neste servidor? (padrão: ligada, a menos que AI_DEFAULT=off ou a staff tenha desligado) */
 const aiEnabled = (guildId) => getGuildConfig(guildId).aiEnabled ?? (process.env.AI_DEFAULT !== 'off');
@@ -231,12 +201,14 @@ function explain(status, apiStatus = '', message = '') {
   return '❌ A IA não conseguiu responder agora. Tente de novo mais tarde.';
 }
 
-async function requisitar(model, pergunta, perfil, maxOutputTokens, timeout) {
-  const generationConfig = { maxOutputTokens, temperature: 0.7 };
+async function requisitar(model, pergunta, perfil, maxOutputTokens, timeout, extra = {}) {
+  const sistema = extra.system || SYSTEM_PROMPT;
+  const generationConfig = { maxOutputTokens, temperature: extra.temperature ?? 0.7 };
   if (perfil.thinking) generationConfig.thinkingConfig = perfil.thinking;
+  if (extra.json && perfil.json !== false && perfil.sistema) generationConfig.responseMimeType = 'application/json'; // o Gemma não tem modo JSON
   const body = perfil.sistema
-    ? { systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] }, contents: [{ role: 'user', parts: [{ text: pergunta }] }], generationConfig }
-    : { contents: [{ role: 'user', parts: [{ text: `${SYSTEM_PROMPT}\n\nPergunta: ${pergunta}` }] }], generationConfig };
+    ? { systemInstruction: { parts: [{ text: sistema }] }, contents: [{ role: 'user', parts: [{ text: pergunta }] }], generationConfig }
+    : { contents: [{ role: 'user', parts: [{ text: `${sistema}\n\nPergunta: ${pergunta}` }] }], generationConfig };
   const res = await fetch(`${API_BASE}/models/${encodeURIComponent(model)}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': API_KEY },
@@ -248,16 +220,17 @@ async function requisitar(model, pergunta, perfil, maxOutputTokens, timeout) {
 }
 
 /** Chama um modelo. Se ele recusar "pensamento" ou "instrução de sistema", aprende e repete sem isso. */
-async function chamar(model, pergunta, { maxOutputTokens = MAX_OUTPUT_TOKENS, timeout = TIMEOUT_MS } = {}) {
+async function chamar(model, pergunta, { maxOutputTokens = MAX_OUTPUT_TOKENS, timeout = TIMEOUT_MS, ...extra } = {}) {
   const perfil = perfilDe(model);
   try {
     for (let i = 0; i < 3; i++) {
-      const { res, corpo } = await requisitar(model, pergunta, perfil, maxOutputTokens, timeout);
+      const { res, corpo } = await requisitar(model, pergunta, perfil, maxOutputTokens, timeout, extra);
       if (res.ok) return { ok: true, corpo };
       const msg = corpo?.error?.message || '';
       const m = msg.toLowerCase();
       if (res.status === 400 && perfil.thinking && /think/.test(m)) { perfil.thinking = null; continue; }
       if (res.status === 400 && perfil.sistema && /(developer|system) instruction|systeminstruction/.test(m)) { perfil.sistema = false; continue; }
+      if (res.status === 400 && extra.json && perfil.json !== false && /mime|json/.test(m)) { perfil.json = false; continue; }
       const retry = JSON.stringify(corpo?.error?.details || []).match(/"retryDelay":"(\d+(?:\.\d+)?)s"/);
       return { ok: false, status: res.status, apiStatus: corpo?.error?.status, msg, retryMs: retry ? Math.ceil(Number(retry[1]) * 1000) : 0 };
     }
@@ -304,7 +277,8 @@ function registrarTokens(corpo) {
   uso.pensamento += t.pensamento;
 }
 
-async function askGemini(pergunta) {
+/** opts: { system, json, temperature, maxOutputTokens } — usado pela zoeira automática (mesma escolha de modelo, mesmos limites). */
+async function askGemini(pergunta, opts = {}) {
   await garantirCatalogo();
   const lista = ordemDeTentativa();
   if (!lista.length) {
@@ -317,7 +291,7 @@ async function askGemini(pergunta) {
   let ultimo = null;
   for (const model of lista.slice(0, MAX_TENTATIVAS)) {
     if (Date.now() - inicio > ORCAMENTO_MS) break;
-    const r = await chamar(model, pergunta);
+    const r = await chamar(model, pergunta, opts);
 
     if (r.ok) {
       const candidato = r.corpo?.candidates?.[0];
@@ -532,4 +506,6 @@ async function handleAiMention(message) {
   }
 }
 
-module.exports = { aiSlashCommands, handledCommands, handleAiInteraction, handleAiMention, aiEnabled, askGemini, answer, cacheGet, testarModelos, MODELOS_ORDEM, MODELOS_EXCLUIDOS };
+const aiConfigured = () => !!API_KEY;
+
+module.exports = { aiConfigured, aiSlashCommands, handledCommands, handleAiInteraction, handleAiMention, aiEnabled, askGemini, answer, cacheGet, testarModelos, MODELOS_ORDEM, MODELOS_EXCLUIDOS };
