@@ -6,7 +6,11 @@ Obrigatória
 IA (Gemini) — opcional, mas necessária para /perguntar
   GEMINI_API_KEY        chave criada em https://aistudio.google.com/apikey
                         ⚠️ Cole SÓ aqui. Nunca em código, chat ou print. Se vazou, apague e crie outra.
-  GEMINI_MODEL          padrão: gemini-3.1-flash-lite
+  GEMINI_MODEL          vazio ou "auto" (recomendado): o bot escolhe sozinho o modelo mais econômico que
+                        estiver funcionando e troca se um falhar. Se definir um nome, ele vira a 1ª escolha.
+  GEMINI_FALLBACK_MODELS  (opcional) modelos extras tentados logo depois do forçado, separados por vírgula
+  Comandos: ?ia testar (roda do mais barato ao mais caro até achar um que responda)
+            ?ia comparar (testa todos os modelos de texto e fica com o que gasta menos token)
   AI_DEFAULT            "off" = IA vem desligada em servidores que nunca usaram ?ia on
   AI_COOLDOWN_SECONDS   espera entre perguntas (padrão 8)
   AI_DAILY_LIMIT        perguntas por pessoa por dia (padrão 30)

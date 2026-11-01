@@ -44,7 +44,7 @@ Em cada linha: `<obrigatório>` `[opcional]`. A permissão entre parênteses é 
 - `/setadminuser <usuario>` — Adiciona um usuário com permissões administrativas do bot *(🔒 Administrador)*
 - `/deladminrole <cargo>` — Remove um cargo da administração do bot *(🔒 Administrador)*
 - `/deladminuser <usuario>` — Remove um usuário da administração do bot *(🔒 Administrador)*
-- `/ia [status]` — Liga/desliga a IA neste servidor, ou mostra se está ligada (staff) *(🔒 Gerenciar Servidor)*
+- `/ia [status] [testar|comparar]` — Liga/desliga a IA, mostra o estado ou testa os modelos (staff). `testar` roda do mais barato ao mais caro até achar um que responda; `comparar` testa todos e fica com o que gasta menos token *(🔒 Gerenciar Servidor)*
 - `?backup [status|configurar|agora|recuperar|exportar|restaurar] [arquivo] [canal]` — Backup e restauração dos dados do bot (só o dono) *(🔒 dono do bot)*
 
 ## 💳 Economia — Conta (14)

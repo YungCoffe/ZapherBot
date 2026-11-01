@@ -24,7 +24,8 @@ const CHANGELOG = [
       '🛡️ **Segurança**: só o dono ou um Administrador usa, pede confirmação por botão (60 segundos) e protege o canal de backup e os cargos comprados na loja. Quem tinha cargo equivalente (dono, sub dono, coordenador, hmod, moderador, suporte) recebe o novo automaticamente.',
       '🔄 **`?setup atualizar`**: o setup antigo, que não apaga nada e só completa o que falta.',
       '🎫 **Tickets**: ao abrir, só o cargo **Suporte** é marcado. Os demais cargos da equipe continuam vendo e atendendo o ticket.',
-      '🏷️ **Painel de cargos**: avisos, eventos, sorteios, gamer, dev e designer por botão.'
+      '🏷️ **Painel de cargos**: avisos, eventos, sorteios, gamer, dev e designer por botão.',
+      '🤖 **IA com modelo automático**: o bot tenta os modelos do Gemini do mais barato ao mais caro (lite, flash, gemma, pro), pula os que falham ou estouram a cota e usa o primeiro que responde, com o "pensamento" reduzido ao mínimo. Use `?ia testar` ou `?ia comparar` para ver qual está pegando e qual gasta menos token.'
     ]
   },
   {
